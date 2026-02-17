@@ -46,6 +46,9 @@ content/
 config/*.env
 !config/*.env.example
 
+# Schedule data (managed by web UI, contains local config)
+config/schedules.json
+
 # OS
 .DS_Store
 Thumbs.db
@@ -54,3 +57,17 @@ Thumbs.db
 *.tmp
 *.bak
 *.swp
+
+# Media content (synced via WebDAV, not version controlled)
+vaeveriet_screens_slideshow/
+
+# Project clutter
+project_backup/
+obs-digital-signage-system/
+debug_*.py
+
+# Development-only files (not needed on GitHub)
+obs_ws_protocol.md
+claude.md
+test_manual_folder.bat
+tests/

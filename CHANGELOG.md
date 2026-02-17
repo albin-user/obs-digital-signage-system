@@ -4,6 +4,145 @@ All notable changes to the OBS Digital Signage Automation System.
 
 ---
 
+## [2.2.1] - 2026-02-17
+
+### UX Polish: Simplified Schedule Admin Panel
+
+Focused on making the web UI approachable for non-technical users (church volunteers).
+
+**Collapsible Advanced Settings**
+- Wrapped transition, offset, image display time, and volume fields in a `<details>` element
+- New schedules show only 6 fields by default (name, type, day/time, folder, enabled)
+- Advanced settings auto-expand when editing the default schedule
+- Zero-JS, keyboard-accessible, screen-reader-friendly
+
+**Auto-Focus on Modal Open**
+- Name field receives focus when opening Add Schedule modal
+- Folder field receives focus when editing Default Schedule
+
+**Folder Loading Indicator**
+- Dropdown shows "Loading folders..." during fetch
+- Shows "No folders found" when empty, "Failed to load folders" on error
+
+**Replaced Tooltips with Inline Help Text**
+- Removed all 10 `?` tooltip spans (unusable on mobile/touch devices)
+- Added 3 inline help hints under the fields that actually confuse users:
+  folder, transition offset, and image display time
+
+**Styled Delete Confirmation Dialog**
+- Replaced browser `confirm()` with a themed dark-mode dialog
+- Promise-based `showConfirm()` function reuses existing `.modal-overlay` styling
+- ESC key dismisses both the confirm dialog and the schedule modal
+
+**Folder Content Preview**
+- When a folder is selected, shows a preview: "8 files (5 images, 3 videos)" + first 10 filenames
+- New backend: `StoreboxBrowser.list_files()` method and `GET /api/folders/files/<path>` route
+- Helps volunteers verify they picked the right content folder
+
+**Mobile Layout Improvements**
+- Status bar switches to 2-column grid on mobile (was single-column stack)
+- Uptime card hidden on mobile (least actionable info)
+- Schedule list stays higher on the page
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/web/templates/index.html` | Removed tooltip spans, added `<details>` wrapper, confirm dialog, folder preview div, inline hints |
+| `src/web/static/style.css` | Added details/summary, form-hint, confirm-dialog, folder-preview, mobile grid styles |
+| `src/web/static/app.js` | Auto-focus, folder loading states, showConfirm(), previewFolder(), ESC handler, advanced toggle |
+| `src/web/app.py` | New `/api/folders/files/<path>` route |
+| `src/web/storebox_browser.py` | New `list_files()` method with path sanitization |
+| `tests/test_web_app.py` | New `test_folder_files_no_webdav` test |
+
+### Testing
+
+- 82/82 tests pass
+- Zero `alert()` or `confirm()` calls in app.js
+- Zero tooltip `?` spans in HTML
+
+---
+
+## [2.2.0] - 2026-02-16
+
+### New Features
+
+**Web-Based Admin Panel**
+- Schedule management via browser at `http://<host>:80`
+- Dashboard with live OBS status, current playing content, active schedule, sync time, and uptime
+- Create, edit, and delete recurring and one-time schedules
+- Storebox NAS folder browser for selecting content paths
+- Conflict detection with warnings for overlapping schedules
+- Per-schedule audio volume control (0-100%)
+- Help tooltips on all form fields
+
+**JSON-Based Schedule Storage**
+- Schedules stored in `config/schedules.json` (managed by web UI)
+- Automatic migration from `.env` settings on first run
+- Support for one-time date-specific events (e.g., Christmas Eve)
+- Priority system: one-time > recurring > default
+- Hot-reload: schedule changes take effect within 60 seconds
+
+**Webhook Notifications**
+- HTTP POST notifications for system events (startup, shutdown, OBS crash, WebDAV failure)
+- Configure via `NOTIFICATION_WEBHOOK_URL` in `.env`
+
+**Health Check Script**
+- `status.sh` - Quick system health check (OBS, Python process, log age, disk, web UI)
+- `test.sh` - Connection test equivalent of TEST.bat for Linux
+
+### Code Quality Improvements
+
+- **Audio race condition fix**: Added `asyncio.Lock` around start/stop audio
+- **Task restart backoff**: Exponential backoff (1s-300s) with max 10 restarts per task
+- **DEBUG log misuse**: Changed `logger.info("DEBUG: ...")` to `logger.debug(...)`
+- **Config validation**: New `Settings.validate()` checks ports, timezone, paths
+- **FFprobe startup check**: Warns at startup if FFprobe is missing
+- **OBS relaunch in recovery**: If reconnect fails and OBS is not running, relaunches OBS
+- **File monitor cleanup**: Sets `self.observer = None` on startup failure
+- **Silent config failure**: Replaced `except: pass` with `logger.warning()`
+- **Temp file cleanup**: Deletes `*.tmp` files before scanning content
+- **Unsupported format feedback**: Logs warning for unrecognized file extensions
+
+### Security & Cleanup
+
+- Deleted nested duplicate `obs-digital-signage-system/` directory (~47 MB)
+- Deleted `project_backup/` (~833 MB)
+- Removed `debug_obs_check.py` and `debug_transform.py` (contained hardcoded passwords)
+- Cleaned `.tmp` files from content directories
+- Updated `.gitignore` with cleanup patterns
+
+### Testing
+
+- New `tests/` directory with pytest infrastructure
+- `tests/test_scheduler.py` - Schedule logic and priority tests
+- `tests/test_settings.py` - Config validation tests
+- `tests/test_schedule_store.py` - JSON CRUD and conflict detection tests
+- `tests/test_content_manager.py` - MediaFile metadata tests
+- `pyproject.toml` with pytest configuration
+
+### Documentation
+
+- Updated `.env.example` files with scheduling, web UI, and notification sections
+- New `config/windows_prod.env.example` template
+- Updated CHANGELOG with v2.2.0 entry
+
+### Dependencies
+
+- Added `flask>=3.0.0` for web UI
+
+### Upgrade Notes
+
+**From 2.1.x to 2.2.0:**
+1. Pull latest code: `git pull origin main`
+2. Install new dependency: `pip install flask>=3.0.0` (or run `./install.sh`)
+3. On first startup, schedules will auto-migrate from `.env` to `config/schedules.json`
+4. Web UI available at `http://<host>:80` (port 80 by default)
+5. Future schedule changes should be made through the web UI
+6. Add `WEB_UI_ENABLED=true` and `WEB_UI_PORT=80` to your `.env` if not present
+
+---
+
 ## [2.1.1] - 2025-11-14
 
 ### 🐛 Critical Bug Fix - OBS Scene Source Deletion After Reboot
@@ -167,7 +306,7 @@ DEFAULT_TRANSITION_OFFSET=0.5
 - `config/windows_prod.env` - **NEW** - Windows production configuration
 
 **Important Path Fix**:
-- ⚠️ **Ubuntu**: Changed `CONTENT_BASE_DIR=/opt/digital-signage` → `/home/obs_slideshow/obs-digital-signage-system`
+- ⚠️ **Ubuntu**: Changed `CONTENT_BASE_DIR=/opt/digital-signage` → `/home/your_user/obs-digital-signage-system`
 - Fixes permission errors for non-root users
 - **Recommended**: Use project directory to keep everything in one place (avoid creating separate `digital-signage` folder)
 
@@ -281,7 +420,7 @@ MANUAL_CONTENT_FOLDER=
 2. **Update config files manually** (not tracked by git):
    - Add scheduling section to your config file
    - Fix `WEBDAV_ROOT_PATH=/vaeveriet_screens_slideshow` (if using WebDAV)
-   - **Ubuntu**: Change `CONTENT_BASE_DIR=/home/obs_slideshow/obs-digital-signage-system` (use project directory, not separate folder)
+   - **Ubuntu**: Change `CONTENT_BASE_DIR=/home/your_user/obs-digital-signage-system` (use project directory, not separate folder)
 3. **Clean up old folders** (Ubuntu only, if you had separate digital-signage folder):
    ```bash
    rm -rf ~/digital-signage  # Optional: remove old separate folder
@@ -455,7 +594,7 @@ This release includes extensive testing and bug fixes for Ubuntu deployment.
 ### 🚀 Deployment
 
 **GitHub Repository**
-- Repository: `https://github.com/jensen-user/obs-digital-signage-system`
+- Repository: `https://github.com/albin-user/obs-digital-signage-system`
 - All code and documentation available
 - Credentials protected
 - Ready for public sharing
@@ -473,7 +612,7 @@ This release includes extensive testing and bug fixes for Ubuntu deployment.
 
 **Developed with:**
 - Claude Code (AI assistance)
-- Testing by: jensen-user (obs_slideshow)
+- Testing by: project contributors
 - Platform: Ubuntu 24.04, Windows 11
 
 ---
@@ -503,6 +642,8 @@ This release includes extensive testing and bug fixes for Ubuntu deployment.
 
 ## Version History
 
+- **2.2.1** (2026-02-17) - UX polish: collapsible advanced settings, styled dialogs, folder preview, mobile grid
+- **2.2.0** (2026-02-16) - Web admin panel, JSON schedules, one-time events, code quality fixes
 - **2.1.1** (2025-11-14) - Critical bug fix: OBS scene source deletion after reboot
 - **2.1.0** (2025-11-11) - Time-based scheduling, WebDAV improvements, Windows production config
 - **2.0.0** (2025-11-04) - Production release with Ubuntu fixes

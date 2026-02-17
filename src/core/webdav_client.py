@@ -32,6 +32,7 @@ class WebDAVClient:
         # State tracking
         self.last_sync_time = 0.0
         self.remote_file_cache: Dict[str, Dict] = {}
+        self._sync_lock = asyncio.Lock()
         # For scheduling: sync to base directory to preserve subfolder structure
         # This will download /vaeveriet_screens_slideshow/ from WebDAV to local vaeveriet_screens_slideshow/
         self.local_content_dir = Path(settings.CONTENT_BASE_DIR) / "vaeveriet_screens_slideshow"
@@ -39,99 +40,114 @@ class WebDAVClient:
     async def test_connection(self) -> bool:
         """Test WebDAV connection to Synology NAS."""
         try:
-            # Test connection with a simple list operation
-            await asyncio.get_event_loop().run_in_executor(
-                None, self.client.ls, self.settings.WEBDAV_ROOT_PATH
+            # Test connection with a simple list operation (with timeout)
+            timeout = self.settings.WEBDAV_TIMEOUT + 10
+            await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, self.client.ls, self.settings.WEBDAV_ROOT_PATH
+                ),
+                timeout=timeout
             )
             self.logger.info("WebDAV connection test successful")
             return True
-            
+
+        except asyncio.TimeoutError:
+            self.logger.error(f"WebDAV connection test timed out after {self.settings.WEBDAV_TIMEOUT + 10}s")
+            return False
         except Exception as e:
             self.logger.error(f"WebDAV connection test failed: {e}")
             return False
     
     async def sync_content(self) -> bool:
         """Synchronize content from WebDAV to local directory."""
-        try:
-            self.logger.info("Starting WebDAV content synchronization...")
-
-            # Ensure local directory exists
-            self.local_content_dir.mkdir(parents=True, exist_ok=True)
-
-            # Clean up files marked for deletion from previous session
-            await self._cleanup_deletion_markers()
-            
-            # Get remote file list
-            remote_files = await self._get_remote_file_list()
-            if remote_files is None:
-                return False
-
-            # Update cache with current remote files
-            self.remote_file_cache = remote_files
-
-            # Get local file list
-            local_files = self._get_local_file_list()
-
-            # Determine what needs to be synced
-            changes_detected = False
-
-            # Download new or updated files
-            for remote_file, remote_info in remote_files.items():
-                # Preserve subfolder structure in local path
-                local_path = self.local_content_dir / remote_file
-
-                # Create parent directories if needed
-                local_path.parent.mkdir(parents=True, exist_ok=True)
-
-                if await self._should_download_file(remote_file, remote_info, local_path):
-                    if await self._download_file(remote_file, local_path):
-                        changes_detected = True
-                        self.logger.info(f"Downloaded: {remote_file}")
-
-            # Remove local files that no longer exist remotely
-            self.logger.debug(f"Checking for deletions: {len(local_files)} local files, {len(remote_files)} remote files")
-            for local_file in local_files:
-                if local_file not in remote_files:
-                    local_path = self.local_content_dir / local_file
-                    try:
-                        self.logger.info(f"File removed from remote: {local_file}")
-
-                        # First, notify via callback to remove OBS scenes (if callback provided)
-                        if self.deletion_callback:
-                            try:
-                                await self.deletion_callback(local_file)
-                                self.logger.info(f"OBS content removed for: {local_file}")
-                            except Exception as e:
-                                self.logger.error(f"Failed to remove OBS content for {local_file}: {e}")
-
-                        # Then delete the local file
-                        try:
-                            local_path.unlink()
-                            changes_detected = True
-                            self.logger.info(f"Successfully deleted local file: {local_file}")
-                        except PermissionError:
-                            # File is locked - rename it to mark for deletion
-                            deletion_marker = local_path.with_suffix(local_path.suffix + '.delete')
-                            if not deletion_marker.exists():
-                                local_path.rename(deletion_marker)
-                                self.logger.warning(f"File locked, marked for deletion on next restart: {local_file}")
-                            changes_detected = True
-
-                    except Exception as e:
-                        self.logger.error(f"Failed to remove {local_file}: {e}")
-            
-            self.last_sync_time = time.time()
-            
-            if changes_detected:
-                self.logger.info("WebDAV synchronization completed with changes")
-            else:
-                self.logger.debug("WebDAV synchronization completed - no changes")
-            
-            return changes_detected
-            
-        except Exception as e:
-            self.logger.error(f"WebDAV sync error: {e}")
+        # Prevent concurrent sync operations
+        if self._sync_lock.locked():
+            self.logger.debug("Sync already in progress, skipping")
             return False
+
+        async with self._sync_lock:
+            try:
+                self.logger.info("Starting WebDAV content synchronization...")
+
+                # Ensure local directory exists
+                self.local_content_dir.mkdir(parents=True, exist_ok=True)
+
+                # Clean up files marked for deletion from previous session
+                await self._cleanup_deletion_markers()
+
+                # Get remote file list
+                remote_files = await self._get_remote_file_list()
+                if remote_files is None:
+                    return False
+
+                # Update cache with current remote files
+                self.remote_file_cache = remote_files
+
+                # Get local file list
+                local_files = self._get_local_file_list()
+
+                # Determine what needs to be synced
+                changes_detected = False
+
+                # Download new or updated files
+                for remote_file, remote_info in remote_files.items():
+                    # Preserve subfolder structure in local path
+                    local_path = self.local_content_dir / remote_file
+
+                    # Create parent directories if needed
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    if await self._should_download_file(remote_file, remote_info, local_path):
+                        if await self._download_file(remote_file, local_path):
+                            changes_detected = True
+                            self.logger.info(f"Downloaded: {remote_file}")
+
+                # Remove local files that no longer exist remotely
+                self.logger.debug(f"Checking for deletions: {len(local_files)} local files, {len(remote_files)} remote files")
+                for local_file in local_files:
+                    if local_file not in remote_files:
+                        local_path = self.local_content_dir / local_file
+                        try:
+                            self.logger.info(f"File removed from remote: {local_file}")
+
+                            # First, notify via callback to remove OBS scenes (if callback provided)
+                            if self.deletion_callback:
+                                try:
+                                    await self.deletion_callback(local_file)
+                                    self.logger.info(f"OBS content removed for: {local_file}")
+                                except Exception as e:
+                                    self.logger.error(f"Failed to remove OBS content for {local_file}: {e}")
+                                    # Skip file deletion if OBS cleanup failed - file still in use
+                                    continue
+
+                            # Then delete the local file
+                            try:
+                                local_path.unlink()
+                                changes_detected = True
+                                self.logger.info(f"Successfully deleted local file: {local_file}")
+                            except PermissionError:
+                                # File is locked - rename it to mark for deletion
+                                deletion_marker = local_path.with_suffix(local_path.suffix + '.delete')
+                                if not deletion_marker.exists():
+                                    local_path.rename(deletion_marker)
+                                    self.logger.warning(f"File locked, marked for deletion on next restart: {local_file}")
+                                changes_detected = True
+
+                        except Exception as e:
+                            self.logger.error(f"Failed to remove {local_file}: {e}")
+
+                self.last_sync_time = time.time()
+
+                if changes_detected:
+                    self.logger.info("WebDAV synchronization completed with changes")
+                else:
+                    self.logger.debug("WebDAV synchronization completed - no changes")
+
+                return changes_detected
+
+            except Exception as e:
+                self.logger.error(f"WebDAV sync error: {e}")
+                return False
     
     async def _get_remote_file_list(self) -> Optional[Dict[str, Dict]]:
         """Get list of remote files with metadata (recursively scans subdirectories)."""
@@ -158,9 +174,12 @@ class WebDAVClient:
             file_info: Dictionary to populate with file information
         """
         try:
-            # List contents of this directory
-            items = await asyncio.get_event_loop().run_in_executor(
-                None, self.client.ls, remote_path
+            # List contents of this directory (with timeout)
+            items = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, self.client.ls, remote_path
+                ),
+                timeout=self.settings.WEBDAV_TIMEOUT + 10
             )
 
             for item in items:
@@ -247,6 +266,8 @@ class WebDAVClient:
     
     async def _download_file(self, remote_filename: str, local_path: Path) -> bool:
         """Download file from WebDAV to local path."""
+        # Define temp_path before try so finally can always clean it up
+        temp_path = local_path.with_suffix(local_path.suffix + '.tmp')
         try:
             # Construct the full remote path (webdav4 handles URL encoding internally)
             remote_path = f"{self.settings.WEBDAV_ROOT_PATH}/{remote_filename}".replace('//', '/')
@@ -255,12 +276,13 @@ class WebDAVClient:
 
             self.logger.debug(f"Downloading from remote path: {remote_path}")
 
-            # Create temporary file path
-            temp_path = local_path.with_suffix(local_path.suffix + '.tmp')
-
             # Download file (webdav4 library handles URL encoding automatically)
-            await asyncio.get_event_loop().run_in_executor(
-                None, self.client.download_file, remote_path, str(temp_path)
+            # Use generous timeout for large files (5 minutes max)
+            await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, self.client.download_file, remote_path, str(temp_path)
+                ),
+                timeout=300
             )
 
             # Verify download completed successfully
@@ -274,19 +296,24 @@ class WebDAVClient:
                 return True
             else:
                 self.logger.error(f"Download failed or empty file: {remote_filename}")
-                if temp_path.exists():
-                    temp_path.unlink()
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Error downloading {remote_filename}: {type(e).__name__}: {e}", exc_info=True)
             return False
+        finally:
+            # Clean up partial temp file on any failure
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except Exception:
+                pass
 
     async def _cleanup_deletion_markers(self) -> None:
         """Remove files marked for deletion (with .delete extension)."""
         try:
             deleted_count = 0
-            for file_path in self.local_content_dir.glob('*.delete'):
+            for file_path in self.local_content_dir.rglob('*.delete'):
                 try:
                     file_path.unlink()
                     deleted_count += 1

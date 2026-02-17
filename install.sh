@@ -26,7 +26,7 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-echo -e "${GREEN}[1/6]${NC} Python detected"
+echo -e "${GREEN}[1/7]${NC} Python detected"
 python3 --version
 
 # Check Python version (must be 3.10+)
@@ -39,7 +39,7 @@ fi
 
 # Check if FFmpeg is installed
 echo ""
-echo -e "${GREEN}[2/6]${NC} Checking for FFmpeg..."
+echo -e "${GREEN}[2/7]${NC} Checking for FFmpeg..."
 if ! command -v ffprobe &> /dev/null; then
     echo -e "${YELLOW}[WARNING]${NC} FFmpeg/FFprobe not found"
     echo ""
@@ -58,7 +58,7 @@ fi
 
 # Create virtual environment
 echo ""
-echo -e "${GREEN}[3/6]${NC} Creating virtual environment..."
+echo -e "${GREEN}[3/7]${NC} Creating virtual environment..."
 if [ -d "venv" ]; then
     # Check if venv is valid (has activate script)
     if [ ! -f "venv/bin/activate" ]; then
@@ -90,7 +90,7 @@ fi
 
 # Activate virtual environment
 echo ""
-echo -e "${GREEN}[4/6]${NC} Activating virtual environment..."
+echo -e "${GREEN}[4/7]${NC} Activating virtual environment..."
 source venv/bin/activate
 if [ $? -ne 0 ]; then
     echo -e "${RED}[ERROR]${NC} Failed to activate virtual environment"
@@ -99,7 +99,7 @@ fi
 
 # Upgrade pip
 echo ""
-echo -e "${GREEN}[5/6]${NC} Upgrading pip..."
+echo -e "${GREEN}[5/7]${NC} Upgrading pip..."
 python -m pip install --upgrade pip --quiet
 
 # Install dependencies
@@ -152,6 +152,9 @@ echo -e "   ${GREEN}cat README.md${NC}"
 echo ""
 echo "4. Start the system:"
 echo -e "   ${GREEN}./start.sh${NC}"
+echo ""
+echo "5. Access the admin panel:"
+echo -e "   ${GREEN}http://localhost:8080${NC}  (or http://<ip-address>:8080 from another device)"
 echo ""
 echo "For detailed documentation, see README.md"
 echo ""

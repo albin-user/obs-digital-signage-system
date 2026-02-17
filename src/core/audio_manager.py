@@ -27,6 +27,9 @@ class AudioManager:
         self.audio_thread: Optional[threading.Thread] = None
         self.audio_running = False
         self.pygame_initialized = False
+        self._intentional_stop = False  # True when audio was stopped deliberately (e.g. schedule switch)
+        self._audio_lock = asyncio.Lock()
+        self._volume_lock = threading.Lock()
         
     async def initialize(self) -> None:
         """Initialize audio system."""
@@ -102,12 +105,19 @@ class AudioManager:
     
     async def _start_audio(self) -> None:
         """Start background audio playback."""
+        async with self._audio_lock:
+            await self._start_audio_inner()
+
+    async def _start_audio_inner(self) -> None:
+        """Start background audio playback (inner, lock already held)."""
         try:
             if not self.pygame_initialized or not self.current_audio_file:
                 return
-            
+
+            self._intentional_stop = False
+
             if self.audio_running:
-                await self._stop_audio()
+                await self._stop_audio_inner()
             
             def audio_playback():
                 try:
@@ -116,9 +126,6 @@ class AudioManager:
                     # Load and play audio file
                     pygame.mixer.music.load(str(self.current_audio_file))
                     pygame.mixer.music.play(-1)  # Loop indefinitely
-                    
-                    # Set volume (adjust as needed)
-                    pygame.mixer.music.set_volume(0.5)  # 50% volume
                     
                     self.audio_running = True
                     
@@ -143,8 +150,14 @@ class AudioManager:
     
     async def _stop_audio(self) -> None:
         """Stop background audio playback."""
+        async with self._audio_lock:
+            await self._stop_audio_inner()
+
+    async def _stop_audio_inner(self) -> None:
+        """Stop background audio playback (inner, lock already held)."""
         try:
             if self.audio_running:
+                self._intentional_stop = True
                 self.audio_running = False
                 
                 def stop_pygame():
@@ -161,18 +174,38 @@ class AudioManager:
         except Exception as e:
             self.logger.error(f"Error stopping audio: {e}")
     
+    def set_volume(self, volume_percent: int) -> None:
+        """Set background music volume.
+
+        Args:
+            volume_percent: Volume level 0-100
+        """
+        try:
+            if not self.pygame_initialized:
+                return
+            clamped = max(0, min(100, volume_percent))
+            with self._volume_lock:
+                pygame.mixer.music.set_volume(clamped / 100.0)
+            self.logger.debug(f"Audio volume set to {clamped}%")
+        except Exception as e:
+            self.logger.error(f"Failed to set volume: {e}")
+
     def is_healthy(self) -> bool:
         """Check if audio system is healthy."""
         try:
             if not self.pygame_initialized:
                 return False
-            
+
+            # If audio was intentionally stopped (e.g. schedule switch), that's healthy
+            if self._intentional_stop:
+                return True
+
             # If we have an audio file, check if it's playing
             if self.current_audio_file and not self.audio_running:
                 return False
-            
+
             return True
-            
+
         except Exception:
             return False
     
@@ -180,20 +213,24 @@ class AudioManager:
         """Attempt to recover audio system."""
         try:
             self.logger.info("Attempting audio system recovery...")
-            
+
             # Stop current playback
             await self._stop_audio()
-            
+
             # Reinitialize pygame
             await self._initialize_pygame()
-            
-            # Restart audio if we have a file
-            if self.current_audio_file:
+
+            # Check if current audio file still exists; if not, rescan
+            if self.current_audio_file and not self.current_audio_file.exists():
+                self.logger.warning(f"Audio file no longer exists: {self.current_audio_file.name}, rescanning")
+                self.current_audio_file = None
+                await self.scan_and_start_audio()
+            elif self.current_audio_file:
                 await self._start_audio()
-            
+
             self.logger.info("Audio system recovery completed")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Audio system recovery failed: {e}")
             return False

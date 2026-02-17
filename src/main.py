@@ -10,6 +10,7 @@ import sys
 import time
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 import platform
@@ -24,6 +25,7 @@ from core.file_monitor import FileMonitor
 from core.scheduler import Scheduler
 from utils.logging_config import setup_logging
 from utils.system_utils import SystemUtils
+from utils.notifications import NotificationManager
 
 
 class DigitalSignageSystem:
@@ -45,12 +47,23 @@ class DigitalSignageSystem:
         self.webdav_client: Optional[WebDAVClient] = None
         self.file_monitor: Optional[FileMonitor] = None
         self.scheduler: Optional[Scheduler] = None
+        self._web_thread: Optional[threading.Thread] = None
+        self.notifier = NotificationManager(
+            webhook_url=self.settings.NOTIFICATION_WEBHOOK_URL,
+            enabled=self.settings.NOTIFICATION_ENABLED,
+        )
         
         # Setup signal handlers for graceful shutdown
         if platform.system() != "Windows":
             signal.signal(signal.SIGINT, self._signal_handler)
             signal.signal(signal.SIGTERM, self._signal_handler)
         
+        # Validate configuration
+        config_errors = self.settings.validate()
+        if config_errors:
+            for err in config_errors:
+                self.logger.error(f"Config error: {err}")
+
         self.logger.info(f"Digital Signage System initialized on {platform.system()}")
     
     def _signal_handler(self, signum: int, frame) -> None:
@@ -125,7 +138,17 @@ class DigitalSignageSystem:
             
             # 6. Perform initial content sync and scan
             await self._initial_content_setup()
-            
+
+            # 7. Apply initial audio volume from schedule
+            if self.scheduler and self.audio_manager:
+                vol = self.scheduler.get_current_audio_volume()
+                self.audio_manager.set_volume(vol)
+
+            # 8. Start Web UI in background thread
+            if self.settings.WEB_UI_ENABLED:
+                self._start_web_ui()
+
+            self.notifier.notify_startup()
             self.logger.info("All components initialized successfully")
             return True
             
@@ -133,6 +156,40 @@ class DigitalSignageSystem:
             self.logger.error(f"Component initialization failed: {e}")
             return False
     
+    def _start_web_ui(self) -> None:
+        """Start Flask web UI in a background thread."""
+        try:
+            from web.app import create_app
+
+            system_refs = {
+                "obs_manager": self.obs_manager,
+                "content_manager": self.content_manager,
+                "scheduler": self.scheduler,
+                "audio_manager": self.audio_manager,
+                "webdav_client": self.webdav_client,
+                "settings": self.settings,
+                "startup_time": self.startup_time,
+                "_event_loop": asyncio.get_event_loop(),
+            }
+
+            self._web_app = create_app(self.settings.CONFIG_DIR, system_refs)
+            self._web_port = self.settings.WEB_UI_PORT
+
+            def run_flask():
+                try:
+                    # Suppress Flask/Werkzeug default logging
+                    log = logging.getLogger("werkzeug")
+                    log.setLevel(logging.WARNING)
+                    self._web_app.run(host="0.0.0.0", port=self._web_port, debug=False, use_reloader=False)
+                except Exception as e:
+                    self.logger.error(f"Flask thread crashed: {e}")
+
+            self._web_thread = threading.Thread(target=run_flask, daemon=True, name="web-ui")
+            self._web_thread.start()
+            self.logger.info(f"Web UI started on http://0.0.0.0:{self._web_port}")
+        except Exception as e:
+            self.logger.error(f"Failed to start Web UI: {e}")
+
     async def _initial_content_setup(self) -> None:
         """Perform initial content synchronization and setup."""
         try:
@@ -145,9 +202,7 @@ class DigitalSignageSystem:
             self.logger.info("Scanning local content...")
             await self.content_manager.scan_and_update_content()
 
-            # Verify all scenes have sources (fixes reboot bug where sources disappear)
-            await self.content_manager._verify_scenes_have_sources()
-            self.logger.info("Scene verification completed")
+
 
             # Initialize background audio
             self.logger.info("Setting up background audio...")
@@ -162,52 +217,60 @@ class DigitalSignageSystem:
     async def run_main_loop(self) -> None:
         """Main automation loop with async task management."""
         self.running = True
-        
-        # Create async tasks for different system functions
-        tasks = []
-        
-        # WebDAV synchronization task (every 30 seconds)
-        tasks.append(asyncio.create_task(self._webdav_sync_loop()))
-        
-        # Content rotation task (continuous)
-        tasks.append(asyncio.create_task(self._content_rotation_loop()))
-        
-        # System health monitoring task (every 60 seconds)
-        tasks.append(asyncio.create_task(self._health_monitoring_loop()))
-        
-        # Audio monitoring task (every 30 seconds)
-        tasks.append(asyncio.create_task(self._audio_monitoring_loop()))
 
-        # Schedule monitoring task (if enabled)
+        # Task registry: name -> (factory, task, restart_count, next_backoff)
+        task_factories = {
+            "webdav_sync": self._webdav_sync_loop,
+            "content_rotation": self._content_rotation_loop,
+            "health_monitoring": self._health_monitoring_loop,
+            "audio_monitoring": self._audio_monitoring_loop,
+        }
         if self.settings.SCHEDULE_ENABLED and self.scheduler:
-            tasks.append(asyncio.create_task(self._schedule_monitoring_loop()))
+            task_factories["schedule_monitoring"] = self._schedule_monitoring_loop
+
+        MAX_RESTARTS = 10
+        INITIAL_BACKOFF = 1.0
+        MAX_BACKOFF = 300.0
+
+        task_state = {}
+        tasks = {}
+        for name, factory in task_factories.items():
+            tasks[name] = asyncio.create_task(factory())
+            task_state[name] = {"restarts": 0, "backoff": INITIAL_BACKOFF}
 
         try:
-            # Run until shutdown signal
             while self.running:
                 await asyncio.sleep(1)
-                
-                # Check if any tasks have failed and restart them
-                for i, task in enumerate(tasks):
-                    if task.done() and task.exception():
-                        self.logger.error(f"Task {i} failed: {task.exception()}")
-                        # Restart the failed task
-                        if i == 0:  # WebDAV sync
-                            tasks[0] = asyncio.create_task(self._webdav_sync_loop())
-                        elif i == 1:  # Content rotation
-                            tasks[1] = asyncio.create_task(self._content_rotation_loop())
-                        elif i == 2:  # Health monitoring
-                            tasks[2] = asyncio.create_task(self._health_monitoring_loop())
-                        elif i == 3:  # Audio monitoring
-                            tasks[3] = asyncio.create_task(self._audio_monitoring_loop())
-                
+
+                for name, task in list(tasks.items()):
+                    if not task.done():
+                        continue
+                    try:
+                        task.result()
+                        continue  # Task completed normally
+                    except asyncio.CancelledError:
+                        continue  # Task was cancelled, not a failure
+                    except Exception:
+                        self.logger.error(f"Task '{name}' failed:", exc_info=True)
+                        state = task_state[name]
+
+                        if state["restarts"] >= MAX_RESTARTS:
+                            self.logger.error(f"Task '{name}' exceeded {MAX_RESTARTS} restarts, not restarting")
+                            continue
+
+                        state["restarts"] += 1
+                        backoff = state["backoff"]
+                        self.logger.info(f"Restarting '{name}' in {backoff:.0f}s (attempt {state['restarts']}/{MAX_RESTARTS})")
+                        await asyncio.sleep(backoff)
+                        state["backoff"] = min(backoff * 2, MAX_BACKOFF)
+                        tasks[name] = asyncio.create_task(task_factories[name]())
+
         except KeyboardInterrupt:
             self.logger.info("Keyboard interrupt received")
             self.running = False
-            
+
         finally:
-            # Cancel all background tasks
-            for task in tasks:
+            for task in tasks.values():
                 task.cancel()
                 try:
                     await task
@@ -251,9 +314,16 @@ class DigitalSignageSystem:
                 if self.obs_manager and not await self.obs_manager.health_check():
                     self.logger.warning("OBS health check failed - attempting recovery")
                     await self.obs_manager.recover()
-                
+
+                # Check web UI thread health
+                if (self.settings.WEB_UI_ENABLED
+                        and self._web_thread is not None
+                        and not self._web_thread.is_alive()):
+                    self.logger.warning("Web UI thread died - restarting")
+                    self._start_web_ui()
+
                 await asyncio.sleep(60)  # Health check every minute
-                
+
             except Exception as e:
                 self.logger.error(f"Health monitoring error: {e}")
                 await asyncio.sleep(120)
@@ -294,6 +364,11 @@ class DigitalSignageSystem:
                     # Switch content folder
                     await self.content_manager.switch_content_folder(new_folder, new_offset)
 
+                    # Apply audio volume for new schedule
+                    new_volume = self.scheduler.get_current_audio_volume()
+                    self.audio_manager.set_volume(new_volume)
+                    self.logger.info(f"  Audio volume: {new_volume}%")
+
                     # Resync background audio
                     await self.audio_manager.scan_and_start_audio()
 
@@ -309,7 +384,8 @@ class DigitalSignageSystem:
     async def shutdown(self) -> None:
         """Graceful system shutdown."""
         self.logger.info("Starting graceful shutdown...")
-        
+        self.notifier.notify_shutdown()
+
         try:
             # Stop file monitoring
             if self.file_monitor:
@@ -351,27 +427,132 @@ class DigitalSignageSystem:
             await self.shutdown()
 
 
+def run_preflight_check() -> int:
+    """Run pre-flight validation checks and print pass/fail summary."""
+    from config.settings import Settings
+    import shutil
+
+    results = []
+
+    # 1. Config loads
+    print("Running pre-flight checks...\n")
+    try:
+        settings = Settings()
+        results.append(("Config loads", True, ""))
+    except Exception as e:
+        results.append(("Config loads", False, str(e)))
+        print(_format_results(results))
+        return 1
+
+    # 2. Config validates
+    errors = settings.validate()
+    if errors:
+        results.append(("Config validates", False, "; ".join(errors)))
+    else:
+        results.append(("Config validates", True, ""))
+
+    # 3. FFprobe available
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe:
+        results.append(("FFprobe found", True, ffprobe))
+    else:
+        results.append(("FFprobe found", False, "Install FFmpeg for video duration detection"))
+
+    # 4. Content directory exists
+    if settings.CONTENT_DIR.exists():
+        results.append(("Content directory", True, str(settings.CONTENT_DIR)))
+    else:
+        results.append(("Content directory", False, f"{settings.CONTENT_DIR} does not exist"))
+
+    # 5. OBS WebSocket connection
+    try:
+        import obsws_python as obs
+        client = obs.ReqClient(
+            host=settings.OBS_HOST,
+            port=settings.OBS_PORT,
+            password=settings.OBS_PASSWORD,
+            timeout=5,
+        )
+        version = client.get_version()
+        client.base_client.ws.close()
+        results.append(("OBS WebSocket", True, f"OBS {version.obs_version}"))
+    except Exception as e:
+        results.append(("OBS WebSocket", False, str(e)))
+
+    # 6. WebDAV connection (optional)
+    if settings.WEBDAV_HOST:
+        try:
+            from core.webdav_client import WebDAVClient
+            wdav = WebDAVClient(settings)
+            # test_connection is async, run it synchronously
+            connected = asyncio.get_event_loop().run_until_complete(wdav.test_connection())
+            if connected:
+                results.append(("WebDAV connection", True, settings.WEBDAV_HOST))
+            else:
+                results.append(("WebDAV connection", False, "Connection test returned false"))
+        except Exception as e:
+            results.append(("WebDAV connection", False, str(e)))
+    else:
+        results.append(("WebDAV connection", None, "Not configured (offline mode)"))
+
+    print(_format_results(results))
+
+    # Exit 0 if all critical checks pass (skip optional ones marked None)
+    critical_passed = all(ok for _, ok, _ in results if ok is not None)
+    return 0 if critical_passed else 1
+
+
+def _format_results(results: list) -> str:
+    """Format check results as a readable summary."""
+    lines = []
+    for name, ok, detail in results:
+        if ok is True:
+            status = "PASS"
+        elif ok is False:
+            status = "FAIL"
+        else:
+            status = "SKIP"
+        suffix = f"  ({detail})" if detail else ""
+        lines.append(f"  [{status}] {name}{suffix}")
+
+    passed = sum(1 for _, ok, _ in results if ok is True)
+    failed = sum(1 for _, ok, _ in results if ok is False)
+    skipped = sum(1 for _, ok, _ in results if ok is None)
+
+    lines.append("")
+    lines.append(f"  {passed} passed, {failed} failed, {skipped} skipped")
+    if failed == 0:
+        lines.append("  All critical checks passed!")
+    else:
+        lines.append("  Fix the failures above before starting the system.")
+    return "\n".join(lines)
+
+
 async def main() -> None:
     """Application entry point."""
     system = DigitalSignageSystem()
-    
+
     try:
         exit_code = await system.run()
         sys.exit(exit_code)
-        
+
     except KeyboardInterrupt:
         print("\nShutdown requested by user")
         await system.shutdown()
         sys.exit(0)
-        
+
     except Exception as e:
         print(f"Critical error: {e}")
         sys.exit(1)
 
 
 if __name__ == "__main__":
+    # Handle --check flag before starting the full system
+    if "--check" in sys.argv:
+        sys.exit(run_preflight_check())
+
     # Set event loop policy for Windows
     if platform.system() == "Windows":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    
+
     asyncio.run(main())

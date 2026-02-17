@@ -1,0 +1,9 @@
+[project]
+name = "obs-digital-signage-system"
+version = "2.2.0"
+description = "Automated digital signage system for OBS Studio"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

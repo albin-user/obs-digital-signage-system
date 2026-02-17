@@ -107,8 +107,10 @@ class FileMonitor:
                 self.logger.info("System will work without file monitoring - content will be reloaded on restart")
             else:
                 self.logger.error(f"Failed to start file monitor: {e}")
+            self.observer = None
         except Exception as e:
             self.logger.error(f"Failed to start file monitor: {e}")
+            self.observer = None
     
     def stop(self) -> None:
         """Stop file monitoring."""

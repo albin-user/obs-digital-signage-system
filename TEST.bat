@@ -7,13 +7,22 @@ echo.
 
 cd /d "%~dp0"
 
+REM Check virtual environment
+if not exist "venv\Scripts\activate.bat" (
+    echo [ERROR] Virtual environment not found. Run INSTALL.bat first.
+    echo.
+    pause
+    exit /b 1
+)
+call venv\Scripts\activate.bat
+
 echo Testing connection to OBS Studio...
 echo Host: localhost
 echo Port: 4455
 echo Password: (from config file)
 echo.
 
-python -c "import os; exec('for line in open(\"config/windows_test.env\"): exec(\"os.environ[line.split(\\\"=\\\")[0].strip()] = line.split(\\\"=\\\", 1)[1].strip()\\\" if \\\"=\\\" in line and not line.startswith(\\\"#\\\") else \\\"\\\")'); import obsws_python as obs; client = obs.ReqClient(host='localhost', port=4455, password=os.getenv('OBS_PASSWORD', ''), timeout=5); version = client.get_version(); print('SUCCESS: Connected to OBS Studio'); print(f'OBS Version: {version.obs_version}'); print(f'WebSocket Version: {version.obs_web_socket_version}'); print(''); print('✓ OBS WebSocket is working correctly!')"
+python -c "import os; exec('for line in open(\"config/windows_test.env\"): exec(\"os.environ[line.split(\\\"=\\\")[0].strip()] = line.split(\\\"=\\\", 1)[1].strip()\\\" if \\\"=\\\" in line and not line.startswith(\\\"#\\\") else \\\"\\\")'); import obsws_python as obs; client = obs.ReqClient(host='localhost', port=4455, password=os.getenv('OBS_PASSWORD', ''), timeout=5); version = client.get_version(); print('SUCCESS: Connected to OBS Studio'); print(f'OBS Version: {version.obs_version}'); print(f'WebSocket Version: {version.obs_web_socket_version}'); print(''); print('OBS WebSocket is working correctly!')"
 
 if %errorlevel% neq 0 (
     echo.

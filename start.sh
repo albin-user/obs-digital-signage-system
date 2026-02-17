@@ -18,6 +18,17 @@ echo " OBS Digital Signage Automation System"
 echo "===================================================================="
 echo ""
 
+# Check configuration file exists
+if [ ! -f "config/ubuntu_prod.env" ]; then
+    echo -e "${RED}[ERROR]${NC} Configuration file not found: config/ubuntu_prod.env"
+    echo ""
+    echo "Please run the installation script first:"
+    echo "  ./install.sh"
+    echo "Then edit config/ubuntu_prod.env with your credentials."
+    echo ""
+    exit 1
+fi
+
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
     echo -e "${RED}[ERROR]${NC} Virtual environment not found"
@@ -36,6 +47,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Ensure deactivate runs on exit (even Ctrl+C)
+trap "deactivate 2>/dev/null" EXIT
+
 # Set environment to use production config
 export ENVIRONMENT=production
 
@@ -43,6 +57,3 @@ export ENVIRONMENT=production
 echo -e "${GREEN}[2/2]${NC} Starting Digital Signage System..."
 echo ""
 python src/main.py
-
-# Deactivate virtual environment on exit
-deactivate

@@ -10,6 +10,24 @@ echo.
 
 cd /d "%~dp0"
 
+REM Check configuration file exists
+if not exist "config\windows_test.env" (
+    echo [ERROR] Configuration file not found: config\windows_test.env
+    echo Run INSTALL.bat first, then edit the config file.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM Check virtual environment
+if not exist "venv\Scripts\activate.bat" (
+    echo [ERROR] Virtual environment not found. Run INSTALL.bat first.
+    echo.
+    pause
+    exit /b 1
+)
+call venv\Scripts\activate.bat
+
 echo Checking OBS connection...
 echo.
 

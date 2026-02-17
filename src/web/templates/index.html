@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS Digital Signage - Admin Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>OBS Digital Signage - Admin Panel</h1>
+        <p class="subtitle">Manage your digital signage schedules. Each schedule controls which content folder plays on screen, what transition effect is used, and at what volume the background music plays. Schedules activate automatically based on their configured day and time.</p>
+    </header>
+
+    <!-- Status Bar -->
+    <section id="status-bar" class="status-bar">
+        <div class="status-card">
+            <span class="status-label">OBS</span>
+            <span id="obs-status" class="status-value">--</span>
+        </div>
+        <div class="status-card">
+            <span class="status-label">Playing</span>
+            <span id="playing-status" class="status-value">--</span>
+        </div>
+        <div class="status-card">
+            <span class="status-label">Schedule</span>
+            <span id="schedule-status" class="status-value">--</span>
+        </div>
+        <div class="status-card">
+            <span class="status-label">Last Sync</span>
+            <span id="sync-status" class="status-value">--</span>
+        </div>
+        <div class="status-card" id="card-uptime">
+            <span class="status-label">Uptime</span>
+            <span id="uptime-status" class="status-value">--</span>
+        </div>
+        <div class="status-card">
+            <span class="status-label">Media Files</span>
+            <span id="media-count" class="status-value">--</span>
+        </div>
+        <div class="status-card">
+            <span class="status-label">Sync</span>
+            <button id="btn-sync" class="btn btn-small">Sync Now</button>
+        </div>
+    </section>
+
+    <!-- Conflict alerts -->
+    <div id="conflict-alerts"></div>
+
+    <!-- Schedules -->
+    <section class="schedules-section">
+        <div class="section-header">
+            <h2>Schedules</h2>
+            <button id="btn-add" class="btn btn-primary">+ Add Schedule</button>
+        </div>
+        <div id="schedule-list"></div>
+
+        <!-- Default Schedule -->
+        <div id="default-schedule" class="schedule-card default-card">
+            <div class="card-header">
+                <h3>Default Schedule</h3>
+                <span class="badge badge-default">always on</span>
+            </div>
+            <p class="card-hint">Fallback - plays whenever no other schedule is active</p>
+            <div class="card-details" id="default-details"></div>
+            <div class="card-actions">
+                <button id="btn-edit-default" class="btn btn-small">Edit</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Modal -->
+    <div id="modal-overlay" class="modal-overlay" style="display:none" onclick="closeModalOverlay(event)">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">Add Schedule</h2>
+                <button class="btn-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="schedule-form" onsubmit="saveSchedule(event)">
+                <input type="hidden" id="edit-id" value="">
+
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="f-name" required placeholder="e.g., Sunday Service">
+                </div>
+
+                <div class="form-group">
+                    <label>Type</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="type" value="recurring" checked onchange="toggleType()"> Recurring</label>
+                        <label><input type="radio" name="type" value="one-time" onchange="toggleType()"> One-time</label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="group-day">
+                    <label>Day of Week</label>
+                    <select id="f-day">
+                        <option value="0">Monday</option>
+                        <option value="1">Tuesday</option>
+                        <option value="2">Wednesday</option>
+                        <option value="3">Thursday</option>
+                        <option value="4">Friday</option>
+                        <option value="5">Saturday</option>
+                        <option value="6" selected>Sunday</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="group-date" style="display:none">
+                    <label>Date</label>
+                    <input type="date" id="f-date">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Time</label>
+                        <input type="time" id="f-start" value="08:00" required>
+                    </div>
+                    <div class="form-group">
+                        <label>End Time</label>
+                        <input type="time" id="f-end" value="13:30" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Folder</label>
+                    <select id="f-folder">
+                        <option value="">-- Select folder --</option>
+                    </select>
+                    <input type="text" id="f-folder-manual" placeholder="Or type folder path manually" style="margin-top:4px">
+                    <small class="form-hint">Choose which NAS folder's images and videos to display</small>
+                    <div id="folder-preview" class="folder-preview" style="display:none"></div>
+                </div>
+
+                <div class="form-group toggle-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="f-enabled" checked>
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                        Schedule Enabled
+                    </label>
+                </div>
+
+                <details id="advanced-settings" class="form-advanced">
+                    <summary>Advanced settings</summary>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Transition</label>
+                            <select id="f-transition">
+                                <option value="Fade">Fade</option>
+                                <option value="Stinger">Stinger</option>
+                                <option value="Cut">Cut</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Offset (s)</label>
+                            <input type="number" id="f-offset" value="2.0" step="0.1" min="0" max="10">
+                            <small class="form-hint">Seconds before a video ends to start the transition</small>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Image Display (s)</label>
+                            <input type="number" id="f-imgtime" value="15" min="1" max="120">
+                            <small class="form-hint">How long each image stays on screen</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Audio Volume</label>
+                            <div class="volume-control">
+                                <input type="range" id="f-volume" min="0" max="100" value="80">
+                                <span id="volume-display">80%</span>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirm dialog -->
+    <div id="confirm-overlay" class="modal-overlay" style="display:none">
+        <div class="confirm-dialog">
+            <p id="confirm-message"></p>
+            <div class="form-actions">
+                <button type="button" class="btn" id="confirm-cancel">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-ok">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

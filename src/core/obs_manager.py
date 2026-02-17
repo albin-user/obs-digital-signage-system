@@ -79,11 +79,14 @@ class OBSManager:
                             return True
                     
                     # Check executable path for more accurate detection
-                    if process_exe and 'obs' in process_exe.lower():
-                        # Verify it's actually OBS Studio, not just any process with 'obs' in the name
-                        if any(part in process_exe for part in ['obs-studio', 'obs64', '/obs', '\\obs']):
-                            self.logger.debug(f"Found OBS executable: {process_exe}")
-                            return True
+                    # Check executable path for more accurate detection
+                    if process_exe:
+                        exe_name = Path(process_exe).name.lower()
+                        if any(name in exe_name for name in ['obs', 'obs64', 'obs-studio']):
+                             # Double check it's not just a substring (like 'jobs')
+                             if exe_name in ['obs', 'obs64', 'obs64.exe', 'obs.exe', 'obs-studio', 'obs-studio.exe']:
+                                self.logger.debug(f"Found OBS executable: {process_exe}")
+                                return True
                             
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     continue
@@ -96,6 +99,15 @@ class OBSManager:
     async def _launch_obs(self) -> bool:
         """Launch OBS Studio with optimized arguments."""
         try:
+            # Guard: don't launch if we already have a running process
+            if self.obs_process is not None and self.obs_process.poll() is None:
+                self.logger.info(f"OBS process already running (PID: {self.obs_process.pid}), skipping launch")
+                return True
+            # Also check via process list in case OBS was started externally
+            if self._is_obs_running():
+                self.logger.info("OBS already running (detected via process list), skipping launch")
+                return True
+
             obs_path = self._find_obs_executable()
             if not obs_path:
                 self.logger.error("OBS Studio executable not found")
@@ -363,22 +375,39 @@ class OBSManager:
             return False
     
     async def recover(self) -> bool:
-        """Attempt to recover OBS connection."""
+        """Attempt to recover OBS connection, relaunching OBS if needed."""
         try:
             self.logger.info("Attempting OBS recovery...")
-            
-            # Reset connection
+
+            # Reset connection state
             self.connected = False
             self.client = None
-            
+            self.obs_process = None
+
+            # Reset stale event client
+            if self.event_client:
+                try:
+                    self.event_client.unsubscribe()
+                except Exception:
+                    pass
+                self.event_client = None
+
             # Try to reconnect
             if await self._connect_websocket():
-                self.logger.info("OBS recovery successful")
+                self.logger.info("OBS recovery successful (reconnected)")
                 return True
-            else:
-                self.logger.error("OBS recovery failed")
-                return False
-                
+
+            # Reconnect failed - check if OBS is still running
+            if not self._is_obs_running():
+                self.logger.warning("OBS is not running - attempting relaunch")
+                if await self._launch_obs():
+                    if await self._connect_websocket():
+                        self.logger.info("OBS recovery successful (relaunched)")
+                        return True
+
+            self.logger.error("OBS recovery failed")
+            return False
+
         except Exception as e:
             self.logger.error(f"OBS recovery error: {e}")
             return False
@@ -433,19 +462,20 @@ class OBSManager:
             self.logger.error(f"Failed to get input list: {e}")
             return []
 
-    async def get_scene_items(self, scene_name: str) -> List:
+    async def get_scene_items(self, scene_name: str) -> Optional[List]:
         """
         Get list of items (sources) in a scene.
 
         Returns:
-            List of scene items, or empty list if scene doesn't exist or has no items.
+            List of scene items, or empty list if scene has no items.
+            Returns None if the request failed (e.g. scene doesn't exist).
         """
         try:
             response = self.client.get_scene_item_list(sceneName=scene_name)
             return response.scene_items if hasattr(response, 'scene_items') else []
         except Exception as e:
             self.logger.debug(f"Failed to get scene items for '{scene_name}': {e}")
-            return []
+            return None
 
     # Input Management Methods
     
@@ -488,6 +518,27 @@ class OBSManager:
         except Exception as e:
             self.logger.error(f"Failed to set input mute {input_name}: {e}")
             return False
+    
+    async def add_source_to_scene(self, scene_name: str, source_name: str) -> Optional[int]:
+        """
+        Add an existing input/source to a scene.
+        
+        This is used when a source exists globally in OBS but needs to be added to a scene.
+        Returns the scene item ID if successful, None otherwise.
+        """
+        try:
+            response = self.client.create_scene_item(
+                scene_name=scene_name,
+                source_name=source_name,
+                enabled=True
+            )
+            scene_item_id = response.scene_item_id if hasattr(response, 'scene_item_id') else None
+            self.logger.debug(f"Added existing source '{source_name}' to scene '{scene_name}' (item ID: {scene_item_id})")
+            return scene_item_id
+        except Exception as e:
+            self.logger.error(f"Failed to add source {source_name} to scene {scene_name}: {e}")
+            return None
+    
     
     # Scene Item Management
     

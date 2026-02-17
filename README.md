@@ -1,6 +1,6 @@
 # OBS Digital Signage Automation System
 
-Professional automated digital signage system for OBS Studio with cloud synchronization and 24/7 operation.
+Automated digital signage for churches and venues. Upload slides and videos to your cloud folder (Storebox, Synology, or any WebDAV server). The system downloads them automatically and displays them on your TV or projector with smooth transitions -- no manual work needed.
 
 [![Production Ready](https://img.shields.io/badge/status-production%20ready-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Ubuntu-blue)]()
@@ -8,17 +8,18 @@ Professional automated digital signage system for OBS Studio with cloud synchron
 
 ---
 
-## 🎬 What Is This?
+## What Is This?
 
-An automated digital signage system that:
-- ✅ **Manages OBS Studio automatically** - Launches OBS, creates scenes, handles transitions
-- ✅ **Displays your content** - Images and videos in continuous rotation
-- ✅ **Syncs from cloud** - Automatic WebDAV/NAS synchronization
-- ✅ **Plays background music** - Optional continuous audio loop
-- ✅ **Runs 24/7** - Self-healing with automatic recovery
-- ✅ **Works anywhere** - Portable, runs from any folder
+A system that runs on a small computer connected to your screen. It:
 
-Perfect for churches, retail stores, restaurants, offices, waiting rooms, and trade shows.
+- **Shows your content automatically** -- images and videos rotate in a loop on your TV/projector
+- **Syncs from the cloud** -- upload files to Storebox or your NAS and they appear on screen within 30 seconds
+- **Switches content by schedule** -- show Sunday service slides during service, default announcements the rest of the week
+- **Has a web admin panel** -- manage schedules from your phone or laptop at `http://<computer-ip>:8080`
+- **Runs 24/7 unattended** -- starts automatically, recovers from errors, no babysitting needed
+- **Plays background music** -- optional continuous audio loop during content display
+
+Built for church IT volunteers, but works for any venue: retail, restaurants, offices, waiting rooms.
 
 ---
 
@@ -57,23 +58,21 @@ Edit your configuration file:
 - **Windows Production**: `config/windows_prod.env`
 
 ```ini
-# Base directory (Ubuntu: use project directory to keep everything together)
-CONTENT_BASE_DIR=/home/obs_slideshow/obs-digital-signage-system  # Ubuntu
-CONTENT_BASE_DIR=C:\Users\User\DevProjects\obs-digital-signage-automation-system  # Windows
+# Base directory (leave empty to auto-detect the project folder)
+CONTENT_BASE_DIR=
 
-# OBS WebSocket Settings
-OBS_PASSWORD=88884444  # Set in OBS: Tools > WebSocket Server Settings
+# OBS password (set the same password in OBS: Tools > WebSocket Server Settings)
+OBS_PASSWORD=your_obs_password
 
-# WebDAV (leave empty for offline mode)
+# Cloud sync (leave WEBDAV_HOST empty to run without cloud sync)
 WEBDAV_HOST=https://your-nas.com
 WEBDAV_USERNAME=your_username
 WEBDAV_PASSWORD=your_password
-WEBDAV_ROOT_PATH=/your_content_folder
+WEBDAV_ROOT_PATH=/your_content_folder  # Folder on NAS containing your slides
 
-# Scheduling (optional - automatic content switching)
+# Scheduling (switches content automatically by day/time)
 SCHEDULE_ENABLED=true
-TIMEZONE=Europe/Copenhagen
-MANUAL_CONTENT_FOLDER=  # For testing: set folder when SCHEDULE_ENABLED=false
+TIMEZONE=UTC  # Examples: UTC, America/New_York, Europe/London, Asia/Tokyo
 ```
 
 **⚠️ SECURITY NOTE:** Config files are protected by `.gitignore` and won't be uploaded to GitHub.
@@ -118,11 +117,7 @@ This comprehensive guide includes:
 - ✅ Troubleshooting guide
 - ✅ Advanced configuration options
 
-**Other Documentation:**
-- [TRANSFER_GUIDE.md](TRANSFER_GUIDE.md) - Transfer files from Windows to Ubuntu
-- [SECURITY.md](SECURITY.md) - Credential management and security
-- [INSTALLATION_CHECKLIST.md](INSTALLATION_CHECKLIST.md) - Verification checklist
-- [claude.md](claude.md) - Complete development history
+COMPLETE_GUIDE.md also covers security & credentials, transferring from Windows to Ubuntu, and a deployment verification checklist.
 
 ---
 
@@ -135,14 +130,23 @@ This comprehensive guide includes:
 - **Auto-detection**: FFprobe reads video durations automatically
 - **Hot reload**: Add/remove content while running
 
-### 🆕 Time-Based Scheduling
+### Time-Based Scheduling
 - **Automatic content switching**: Different content for different times/days
-- **Smart transitions**: Different OBS transitions for each schedule
-- **Timezone support**: Accurate scheduling with timezone awareness (Europe/Copenhagen)
-- **Sunday Service mode**: Special schedule for 08:00-13:30 Sundays with Stinger transitions
-- **Default mode**: Fallback schedule for all other times with Fade transitions
-- **Manual override**: `MANUAL_CONTENT_FOLDER` for testing specific content without scheduling
+- **Recurring + one-time schedules**: Weekly recurring and date-specific events
+- **Smart transitions**: Different OBS transitions per schedule
+- **Per-schedule audio volume**: Set background music level for each schedule
+- **Priority system**: One-time events override recurring, recurring overrides default
+- **Web-based management**: Create, edit, delete schedules from browser
+- **Manual override**: `MANUAL_CONTENT_FOLDER` for testing without scheduling
 - **No restart required**: Content and transitions switch automatically
+
+### Web Admin Panel (New in v2.2.0)
+- **Dashboard**: Live OBS status, current playing content, active schedule, media count, uptime
+- **Schedule manager**: Create, edit, delete recurring and one-time schedules
+- **Storebox browser**: Browse NAS folders for content selection
+- **Manual sync**: Trigger a cloud sync from the browser
+- **Conflict detection**: Warnings for overlapping schedules
+- **Accessible on local network**: `http://<host>:8080` (no authentication required)
 
 ### Display & Transitions
 - **Professional transitions**: Stinger transitions for smooth content changes
@@ -170,21 +174,20 @@ This comprehensive guide includes:
 | `WEBDAV_SYNC_INTERVAL` | 30 | Sync interval in seconds |
 | `OBS_STARTUP_DELAY` | 15 | Wait time for OBS to start |
 
-### 🆕 Scheduling Settings
+### Scheduling & Web UI Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `SCHEDULE_ENABLED` | true | Enable/disable automatic scheduling |
-| `TIMEZONE` | Europe/Copenhagen | Timezone for schedule calculations |
+| `TIMEZONE` | UTC | Timezone for schedule calculations |
 | `SCHEDULE_CHECK_INTERVAL` | 60 | How often to check for schedule changes (seconds) |
 | `MANUAL_CONTENT_FOLDER` | (empty) | Override folder when scheduling disabled |
-| `SUNDAY_SERVICE_DAY` | 6 | Day of week for Sunday (0=Monday, 6=Sunday) |
-| `SUNDAY_SERVICE_START_TIME` | 08:00 | Sunday service start time |
-| `SUNDAY_SERVICE_END_TIME` | 13:30 | Sunday service end time |
-| `SUNDAY_SERVICE_FOLDER` | vaeveriet_screens_slideshow/sunday_service_slideshow | Sunday content folder |
-| `SUNDAY_SERVICE_TRANSITION` | Stinger Transition | Sunday transition type |
-| `DEFAULT_FOLDER` | vaeveriet_screens_slideshow/default_slideshow | Default content folder |
-| `DEFAULT_TRANSITION` | Fade | Default transition type |
+| `WEB_UI_ENABLED` | true | Enable web admin panel |
+| `WEB_UI_PORT` | 8080 | Web UI port (accessible on local network) |
+| `NOTIFICATION_ENABLED` | false | Enable webhook notifications |
+| `NOTIFICATION_WEBHOOK_URL` | (empty) | HTTP POST endpoint for notifications |
+
+Schedules are now managed through the web UI at `http://<host>:8080`. On first startup, existing `.env` schedule settings are automatically migrated to `config/schedules.json`.
 
 **See [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md#system-configuration) for all settings.**
 
@@ -231,16 +234,35 @@ WEBDAV_ROOT_PATH/
 
 ---
 
-## 🐛 Troubleshooting
+## Web Admin Panel
+
+Open `http://<computer-ip>:8080` in any browser on the same network. No login needed.
+
+**What you can do:**
+- **View live status** -- see if OBS is connected, what's currently playing, how many media files are loaded, and system uptime
+- **Create schedules** -- set up recurring weekly schedules (e.g., Sunday 08:00-13:30) or one-time events (e.g., Christmas Eve)
+- **Browse NAS folders** -- pick content folders directly from your Storebox/NAS when creating schedules
+- **Trigger a sync** -- click "Sync Now" to immediately download new content from the cloud
+- **See schedule conflicts** -- get warnings if two schedules overlap
+
+**Tips:**
+- Works on phones and tablets -- the layout is responsive
+- Changes take effect immediately, no restart needed
+- To find the computer's IP address: run `hostname -I` (Ubuntu) or `ipconfig` (Windows)
+- The default port is 8080. Change it with `WEB_UI_PORT` in your config file
+
+---
+
+## Troubleshooting
 
 ### Multiple Folders Created (Ubuntu)
 
 **Problem**: You see both `obs-digital-signage-system/` and `digital-signage/` folders.
 
 **Solution**:
-1. Edit `config/ubuntu_prod.env`:
+1. Edit `config/ubuntu_prod.env` and leave `CONTENT_BASE_DIR` empty (auto-detects project directory):
    ```ini
-   CONTENT_BASE_DIR=/home/obs_slideshow/obs-digital-signage-system
+   CONTENT_BASE_DIR=
    ```
 2. Delete the separate folder:
    ```bash
@@ -248,7 +270,7 @@ WEBDAV_ROOT_PATH/
    ```
 3. Restart the system - everything will be in `obs-digital-signage-system/`
 
-**Why**: `CONTENT_BASE_DIR` should point to the project directory to keep everything together.
+**Why**: When `CONTENT_BASE_DIR` is empty, it defaults to the project directory, keeping everything together.
 
 ### OBS Won't Connect
 
@@ -299,27 +321,87 @@ ffmpeg -i input.mov -c:v libx264 -c:a aac output.mp4
 - Only example templates (`.env.example`) are in version control
 - Installation creates personal configs automatically
 
-**See [SECURITY.md](SECURITY.md) for details.**
+**See [Security & Credentials](COMPLETE_GUIDE.md#security--credentials) in COMPLETE_GUIDE.md for details.**
 
 ---
 
 ## 📂 Project Structure
 
+### Required for deployment
+
+These files must be present for the system to run. Everything else is optional.
+
 ```
-obs-digital-signage-automation-system/
-├── config/               # Configuration files
-│   ├── *.env.example    # Safe templates (no credentials)
-│   └── *.env            # Your configs (protected by .gitignore)
-├── content/             # Your media files (auto-created)
-├── logs/                # System logs (auto-created)
-├── src/                 # Python source code
-├── INSTALL.bat          # Windows installer
-├── install.sh           # Ubuntu installer
-├── START.bat            # Windows launcher
-├── start.sh             # Ubuntu launcher
-├── COMPLETE_GUIDE.md    # 📘 Full documentation
-├── README.md            # This file
-└── SECURITY.md          # Security guide
+obs-digital-signage-system/
+├── src/                              # Application code (all files required)
+│   ├── main.py                       #   Entry point
+│   ├── __init__.py
+│   ├── config/
+│   │   ├── __init__.py
+│   │   └── settings.py               #   Configuration loader
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── obs_manager.py            #   OBS Studio control
+│   │   ├── content_manager.py        #   Scene rotation
+│   │   ├── audio_manager.py          #   Background audio
+│   │   ├── scheduler.py              #   Time-based scheduling
+│   │   ├── webdav_client.py          #   Cloud sync
+│   │   └── file_monitor.py           #   File watching
+│   ├── web/
+│   │   ├── __init__.py
+│   │   ├── app.py                    #   Flask admin panel
+│   │   ├── schedule_store.py         #   Schedule persistence
+│   │   ├── storebox_browser.py       #   NAS folder browser
+│   │   ├── templates/index.html      #   Admin panel page
+│   │   └── static/
+│   │       ├── app.js                #   Admin panel JS
+│   │       └── style.css             #   Admin panel styles
+│   └── utils/
+│       ├── __init__.py
+│       ├── logging_config.py         #   Log setup
+│       ├── notifications.py          #   Webhook alerts
+│       └── system_utils.py           #   System helpers
+├── config/
+│   └── *.env.example                 #   Config templates (pick one for your OS)
+├── requirements.txt                  #   Python dependencies
+└── pyproject.toml                    #   Project metadata
+```
+
+**Plus one install + start script per platform:**
+
+| Platform | Installer | Launcher |
+|----------|-----------|----------|
+| Windows  | `INSTALL.bat` | `START.bat` (dev) or `start_prod.bat` (prod) |
+| Linux    | `install.sh` | `start.sh` |
+
+**Created automatically at runtime** (don't need to exist beforehand):
+
+```
+├── config/*.env              # Your config (copied from .example by installer)
+├── config/schedules.json     # Schedule data (created by web UI)
+├── content/                  # Media files (populated by WebDAV or manually)
+├── logs/                     # System logs
+└── venv/                     # Python virtual environment (created by installer)
+```
+
+### Optional (included in repo but not needed to run)
+
+```
+├── deployment/
+│   └── obs-signage.service   # Systemd service template (Linux auto-start)
+├── TEST.bat / test.sh        # OBS connection test scripts
+├── status.sh                 # Health check script (Linux)
+├── README.md                 # This file
+├── COMPLETE_GUIDE.md         # Full documentation
+└── CHANGELOG.md              # Version history
+```
+
+### Not in repo (local only, excluded by .gitignore)
+
+```
+├── tests/                    # Unit tests (pytest)
+├── claude.md                 # Development history
+└── obs_ws_protocol.md        # OBS WebSocket protocol reference
 ```
 
 ---
@@ -343,7 +425,7 @@ Add `START.bat` to: `C:\Users\YourName\AppData\Roaming\Microsoft\Windows\Start M
 **Ubuntu (SSH):**
 ```bash
 ssh user@signage-computer
-tail -f ~/obs-digital-signage-automation-system/logs/digital_signage.log
+tail -f ~/obs-digital-signage-system/logs/digital_signage.log
 ```
 
 **Windows (Remote Desktop):**
@@ -362,12 +444,9 @@ tail -f ~/obs-digital-signage-automation-system/logs/digital_signage.log
 
 ## 🆘 Getting Help
 
-1. **Check logs**: `logs/digital_signage.log`
-2. **Read documentation**:
-   - [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md) - Full documentation
-   - [SECURITY.md](SECURITY.md) - Security & credentials
-   - [INSTALLATION_CHECKLIST.md](INSTALLATION_CHECKLIST.md) - Setup verification
-3. **Common issues**: See [Troubleshooting section](COMPLETE_GUIDE.md#troubleshooting) in COMPLETE_GUIDE.md
+1. **Pre-flight check**: `python src/main.py --check` (validates config, FFprobe, OBS, WebDAV)
+2. **Check logs**: `logs/digital_signage.log`
+3. **Full documentation**: [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md) (troubleshooting, security, transfers)
 
 ---
 
@@ -380,11 +459,8 @@ MIT License - Free for commercial and personal use.
 ## 🎓 Quick Links
 
 - **Full Setup Guide**: [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md)
-- **Transfer Windows→Ubuntu**: [TRANSFER_GUIDE.md](TRANSFER_GUIDE.md)
-- **Security**: [SECURITY.md](SECURITY.md)
-- **Setup Checklist**: [INSTALLATION_CHECKLIST.md](INSTALLATION_CHECKLIST.md)
-- **Development History**: [claude.md](claude.md)
+- **Version History**: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-**Ready to get started? See [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md) for step-by-step instructions!** 🚀
+**Ready to get started? See [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md) for step-by-step instructions!**

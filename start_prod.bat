@@ -13,6 +13,25 @@ set ENVIRONMENT=production
 echo Using production configuration (windows_prod.env)
 echo.
 
+REM Check configuration file exists
+if not exist "config\windows_prod.env" (
+    echo [ERROR] Configuration file not found: config\windows_prod.env
+    echo Copy config\windows_prod.env.example to config\windows_prod.env
+    echo and edit it with your credentials.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM Check virtual environment
+if not exist "venv\Scripts\activate.bat" (
+    echo [ERROR] Virtual environment not found. Run INSTALL.bat first.
+    echo.
+    pause
+    exit /b 1
+)
+call venv\Scripts\activate.bat
+
 echo Checking OBS connection...
 echo.
 

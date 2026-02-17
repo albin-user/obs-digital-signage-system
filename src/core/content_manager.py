@@ -5,6 +5,7 @@ Handles dynamic scene creation, media file processing, and content rotation.
 
 import asyncio
 import logging
+import re
 import time
 from pathlib import Path
 from typing import List, Dict, Optional, Set
@@ -12,10 +13,13 @@ from typing import List, Dict, Optional, Set
 from config.settings import Settings
 from core.obs_manager import OBSManager
 
+# Pattern for characters unsafe in OBS scene/source names
+_UNSAFE_NAME_RE = re.compile(r'[^a-zA-Z0-9_ .\-()]')
+
 
 class MediaFile:
     """Represents a media file with metadata."""
-    
+
     def __init__(self, file_path: Path, settings: Settings):
         self.file_path = file_path
         self.filename = file_path.name
@@ -39,13 +43,18 @@ class MediaFile:
     def _is_image_file(self, settings: Settings) -> bool:
         return self.file_ext in settings.SUPPORTED_IMAGE_FORMATS
 
+    @staticmethod
+    def _sanitize_obs_name(name: str) -> str:
+        """Replace characters that may cause OBS API errors."""
+        return _UNSAFE_NAME_RE.sub('_', name)
+
     def get_scene_name(self) -> str:
         """Get OBS scene name for this media file."""
-        return f"{self.filename}_scene"
+        return self._sanitize_obs_name(f"{self.filename}_scene")
 
     def get_source_name(self) -> str:
         """Get OBS source/input name for this media file."""
-        return f"{self.filename}_source"
+        return self._sanitize_obs_name(f"{self.filename}_source")
     
     def __str__(self) -> str:
         return f"MediaFile({self.filename}, video={self.is_video}, image={self.is_image})"
@@ -59,12 +68,13 @@ class ContentManager:
         self.obs_manager = obs_manager
         self.logger = logging.getLogger(__name__)
 
-        # Content state
+        # Content state (protected by _rotation_lock)
         self.media_files: List[MediaFile] = []
         self.current_index = 0
         self.playback_start_time = 0.0
         self.current_scene: Optional[str] = None
         self.rotation_active = False
+        self._rotation_lock = asyncio.Lock()
 
         # Tracking for cleanup
         self.managed_scenes: Set[str] = set()
@@ -81,13 +91,19 @@ class ContentManager:
         """Initialize content manager."""
         try:
             self.logger.info("Initializing Content Manager...")
-            
+
+            # Verify FFprobe is available (required for video duration detection)
+            self._check_ffprobe()
+
+            # Clean up leftover .tmp files from interrupted downloads
+            self._cleanup_tmp_files()
+
             # Ensure content directory exists
             self.settings.CONTENT_DIR.mkdir(parents=True, exist_ok=True)
-            
+
             # Create waiting scene if no content
             await self._create_waiting_scene()
-            
+
             self.logger.info("Content Manager initialized")
             
         except Exception as e:
@@ -103,7 +119,6 @@ class ContentManager:
             new_media_files = await self._scan_content_directory()
 
             # On first scan, if no content found, wait and try again
-            # This handles cases where content folder is still mounting after reboot
             is_first_scan = not self.managed_scenes and not self.managed_inputs
             if is_first_scan and not new_media_files:
                 self.logger.info("First scan found no content - waiting 5 seconds for content folder to mount...")
@@ -121,51 +136,90 @@ class ContentManager:
 
             # Content has changed - update everything
             self.content_hash = new_content_hash
-
-            # On first run or if no managed content, do full cleanup
-            if not self.managed_scenes and not self.managed_inputs:
-                await self._cleanup_all_digital_signage_content()
-            else:
-                # Normal cleanup of managed content
-                await self._cleanup_old_content()
             
-            # Update media files list
-            self.media_files = new_media_files
-            
-            if not self.media_files:
-                self.logger.warning("No valid media files found")
-                await self._activate_waiting_scene()
-                return
-            
-            # Sort files alphabetically
-            self.media_files.sort(key=lambda x: x.filename.lower())
+            # 1. Create Sync in Progress scene
+            sync_scene = "Sync in Progress"
+            await self.obs_manager.create_scene(sync_scene)
+            await self.obs_manager.set_current_scene(sync_scene)
+            self.logger.info(f"Created and switched to '{sync_scene}'")
 
-            # IMPORTANT: Calculate durations BEFORE creating OBS scenes
-            # This ensures we know video lengths before adding them to OBS
-            # Uses FFprobe to read video metadata directly from files
-            await self._calculate_media_durations()
+            try:
+                # 2. Cleanup ALL other scenes (except Sync in Progress)
+                await self._cleanup_all_digital_signage_content(exclude_scenes={sync_scene})
 
-            # Now create OBS scenes with known durations
-            await self._create_scenes_for_media()
+                if not new_media_files:
+                    async with self._rotation_lock:
+                        self.media_files = []
+                        self.rotation_active = False
+                    self.logger.warning("No valid media files found")
+                    await self._activate_waiting_scene()
+                    return
 
-            # Clean up any orphaned scenes (like 'J' or other user-created scenes)
-            # This ensures only our managed scenes exist
-            await self._cleanup_orphaned_scenes()
+                # Sort files alphabetically
+                new_media_files.sort(key=lambda x: x.filename.lower())
 
-            # Reset rotation state
-            self.current_index = 0
-            self.rotation_active = True
-            
-            # Start with first piece of content
-            if self.media_files:
-                await self._switch_to_media(0)
-                self.playback_start_time = time.time()
-            
-            self.logger.info(f"Content updated: {len(self.media_files)} media files")
+                # IMPORTANT: Calculate durations BEFORE creating OBS scenes
+                await self._calculate_media_durations(new_media_files)
+
+                # Now create OBS scenes with known durations
+                async with self._rotation_lock:
+                    self.media_files = new_media_files
+
+                await self._create_scenes_for_media()
+
+                # Clean up any orphaned scenes
+                await self._cleanup_orphaned_scenes(exclude_scenes={sync_scene})
+
+                # Reset rotation state under lock, then switch scene outside lock
+                async with self._rotation_lock:
+                    self.current_index = 0
+                    self.rotation_active = True
+                    self.playback_start_time = time.time()
+
+                # Start with first piece of content
+                if new_media_files:
+                    await self._switch_to_media(0)
+
+                self.logger.info(f"Content updated: {len(self.media_files)} media files")
+
+            finally:
+                # Always remove Sync in Progress scene, even on error
+                await self.obs_manager.remove_scene(sync_scene)
             
         except Exception as e:
             self.logger.error(f"Content scan and update failed: {e}")
     
+    def _check_ffprobe(self) -> None:
+        """Check that FFprobe is installed and accessible."""
+        import subprocess
+        try:
+            subprocess.run(
+                ["ffprobe", "-version"],
+                capture_output=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            self.logger.debug("FFprobe is available")
+        except FileNotFoundError:
+            self.logger.warning(
+                "FFprobe not found! Video duration detection will use fallback values. "
+                "Install FFmpeg: sudo apt install ffmpeg (Linux) / choco install ffmpeg (Windows)"
+            )
+
+    def _cleanup_tmp_files(self) -> None:
+        """Delete leftover .tmp files from interrupted downloads."""
+        try:
+            count = 0
+            for tmp_file in self.content_folder.rglob("*.tmp"):
+                try:
+                    tmp_file.unlink()
+                    count += 1
+                except Exception:
+                    pass
+            if count > 0:
+                self.logger.info(f"Cleaned up {count} leftover .tmp file(s)")
+        except Exception as e:
+            self.logger.warning(f"Error cleaning .tmp files: {e}")
+
     async def _scan_content_directory(self) -> List[MediaFile]:
         """Scan directory for supported media files."""
         media_files = []
@@ -182,6 +236,8 @@ class ContentManager:
                             media_files.append(media_file)
                         else:
                             self.logger.warning(f"Skipping corrupted file: {file_path.name}")
+                    elif file_path.suffix.lower() not in self.settings.SUPPORTED_AUDIO_FORMATS:
+                        self.logger.warning(f"Skipping unsupported format: {file_path.name} ({file_path.suffix})")
 
         except Exception as e:
             self.logger.error(f"Error scanning content directory: {e}")
@@ -227,10 +283,13 @@ class ContentManager:
         except Exception as e:
             self.logger.error(f"Cleanup error: {e}")
     
-    async def _cleanup_all_digital_signage_content(self) -> None:
+    async def _cleanup_all_digital_signage_content(self, exclude_scenes: Set[str] = None) -> None:
         """Clean up ALL existing digital signage scenes and inputs."""
         try:
             self.logger.info("Cleaning up existing digital signage content...")
+            
+            if exclude_scenes is None:
+                exclude_scenes = set()
 
             # Check how many scenes exist and will be removed (OBS minimum 1 scene constraint)
             all_scenes = await self.obs_manager.get_scene_list()
@@ -239,6 +298,9 @@ class ContentManager:
             # Count scenes that match our pattern (will be removed)
             scenes_to_remove_count = 0
             for scene_name in all_scenes:
+                if scene_name in exclude_scenes:
+                    continue
+                    
                 if (scene_name.endswith('_scene') or
                     scene_name == 'waiting_for_content_scene' or
                     'slideshow' in scene_name.lower() or
@@ -249,7 +311,8 @@ class ContentManager:
 
             # If we're about to leave only 1 scene or 0 scenes, don't remove sources
             # OBS won't let us delete the last scene, so we should keep its sources too
-            skip_input_removal = scenes_remaining <= 1 and total_scene_count > 0
+            # BUT if we have exclude_scenes (like Sync in Progress), we are safe
+            skip_input_removal = scenes_remaining <= 1 and total_scene_count > 0 and not exclude_scenes
 
             if skip_input_removal:
                 self.logger.info(f"Only {scenes_remaining} scene(s) would remain after cleanup - keeping sources (OBS requires minimum 1 scene)")
@@ -280,6 +343,9 @@ class ContentManager:
 
             scenes_removed = 0
             for scene_name in all_scenes:
+                if scene_name in exclude_scenes:
+                    continue
+
                 # Remove scenes that match our naming pattern or are from previous runs
                 if (scene_name.endswith('_scene') or
                     scene_name == 'waiting_for_content_scene' or
@@ -297,72 +363,8 @@ class ContentManager:
 
         except Exception as e:
             self.logger.error(f"Full cleanup error: {e}")
-
-    async def _verify_scenes_have_sources(self) -> None:
-        """
-        Verify that all managed scenes have their sources.
-
-        This fixes the bug where sources disappear after reboot.
-        If a scene is missing its source but the media file exists,
-        we recreate the source.
-        """
-        try:
-            if not self.managed_scenes or not self.media_files:
-                self.logger.debug("No managed scenes or media files to verify")
-                return
-
-            self.logger.info("Verifying all scenes have sources...")
-            scenes_recovered = 0
-
-            for scene_name in self.managed_scenes:
-                # Get items (sources) in this scene
-                scene_items = await self.obs_manager.get_scene_items(scene_name)
-
-                if not scene_items:
-                    # Scene exists but has no sources - this is the bug!
-                    self.logger.warning(f"Scene '{scene_name}' has no sources - attempting recovery")
-
-                    # Find the media file that should be in this scene
-                    # Scene name format: {filename}_scene
-                    expected_filename = scene_name.replace('_scene', '')
-
-                    # Find matching media file
-                    matching_media = None
-                    for media_file in self.media_files:
-                        if media_file.filename == expected_filename:
-                            matching_media = media_file
-                            break
-
-                    if matching_media:
-                        # Recreate the source for this scene
-                        source_name = f"{matching_media.filename}_source"
-                        self.logger.info(f"Recreating source '{source_name}' in scene '{scene_name}'")
-
-                        # Add the media source to the scene
-                        await self.obs_manager.create_media_source(
-                            scene_name=scene_name,
-                            source_name=source_name,
-                            file_path=str(matching_media.path)
-                        )
-
-                        # Track the recovered input
-                        if source_name not in self.managed_inputs:
-                            self.managed_inputs.add(source_name)
-
-                        scenes_recovered += 1
-                        self.logger.info(f"✓ Recovered scene '{scene_name}' with source '{source_name}'")
-                    else:
-                        self.logger.warning(f"Could not find media file for scene '{scene_name}'")
-
-            if scenes_recovered > 0:
-                self.logger.info(f"✓ Scene verification complete - recovered {scenes_recovered} scene(s)")
-            else:
-                self.logger.info("✓ Scene verification complete - all scenes have sources")
-
-        except Exception as e:
-            self.logger.error(f"Scene verification failed: {e}")
-
-    async def _cleanup_orphaned_scenes(self) -> None:
+    
+    async def _cleanup_orphaned_scenes(self, exclude_scenes: Set[str] = None) -> None:
         """
         Clean up orphaned scenes that don't match our managed content.
 
@@ -370,12 +372,16 @@ class ContentManager:
         part of our digital signage system. Ensures OBS only has our managed scenes.
         """
         try:
+            if exclude_scenes is None:
+                exclude_scenes = set()
+
             # Get all scenes currently in OBS
             all_scenes = await self.obs_manager.get_scene_list()
 
             # Get list of scenes we should keep
             valid_scenes = set(self.managed_scenes)
             valid_scenes.add('waiting_for_content_scene')  # Always keep waiting scene
+            valid_scenes.update(exclude_scenes)
 
             orphaned_removed = 0
             for scene_name in all_scenes:
@@ -396,12 +402,48 @@ class ContentManager:
     
     async def _create_scenes_for_media(self) -> None:
         """Create OBS scenes for all media files."""
+        # Clear tracking sets before rebuilding — prevents unbounded growth
+        # and ensures on_file_deleted() only matches current content
+        self.managed_scenes.clear()
+        self.managed_inputs.clear()
+
         for media_file in self.media_files:
             try:
                 await self._create_scene_for_media(media_file)
             except Exception as e:
                 self.logger.error(f"Failed to create scene for {media_file.filename}: {e}")
     
+    def _get_input_config(self, media_file: MediaFile) -> tuple[Optional[str], Optional[Dict]]:
+        """
+        Get input kind and settings for a media file.
+        
+        Returns:
+            Tuple of (input_kind, input_settings) or (None, None) if unsupported
+        """
+        if media_file.is_image:
+            input_kind = "image_source"
+            input_settings = {
+                "file": str(media_file.file_path),
+                "unload": False
+            }
+            return input_kind, input_settings
+            
+        elif media_file.is_video:
+            input_kind = "ffmpeg_source"
+            input_settings = {
+                "local_file": str(media_file.file_path),
+                "looping": False,
+                "restart_on_activate": True,
+                "clear_on_media_end": False,
+                "close_when_inactive": True,   # Allow unloading to save memory
+                "hw_decode": True              # Enable HW decode for smooth playback during transitions
+            }
+            return input_kind, input_settings
+            
+        else:
+            self.logger.error(f"Unsupported media type: {media_file.filename}")
+            return None, None
+
     async def _create_scene_for_media(self, media_file: MediaFile) -> None:
         """Create OBS scene and source for a media file."""
         try:
@@ -412,32 +454,50 @@ class ContentManager:
             await self.obs_manager.create_scene(scene_name)
             self.managed_scenes.add(scene_name)
 
+
             # Determine source type and settings
-            if media_file.is_image:
-                input_kind = "image_source"
-                input_settings = {
-                    "file": str(media_file.file_path),
-                    "unload": False
-                }
-            elif media_file.is_video:
-                input_kind = "ffmpeg_source"
-                input_settings = {
-                    "local_file": str(media_file.file_path),
-                    "looping": False,
-                    "restart_on_activate": True,
-                    "clear_on_media_end": False
-                }
-            else:
-                self.logger.error(f"Unsupported media type: {media_file.filename}")
+            input_kind, input_settings = self._get_input_config(media_file)
+            
+            if not input_kind:
                 return
 
             # Create input and add to scene
-            await self.obs_manager.create_input(
+            success = await self.obs_manager.create_input(
                 scene_name=scene_name,
                 input_name=source_name,
                 input_kind=input_kind,
                 input_settings=input_settings
             )
+            
+            # If creation failed (source already exists), try adding existing source to scene
+            if not success:
+                self.logger.info(f"Source '{source_name}' already exists - checking if it's in scene '{scene_name}'")
+                
+                # Check if source is ALREADY in the scene to avoid duplicates
+                existing_items = await self.obs_manager.get_scene_items(scene_name)
+                
+                if existing_items is None:
+                    self.logger.warning(f"Could not check duplicates for {scene_name} (request failed)")
+                    existing_items = []
+                
+                source_already_in_scene = False
+                
+                for item in existing_items:
+                    # Handle both dict and object access for robustness
+                    item_source_name = item.get('sourceName') if isinstance(item, dict) else getattr(item, 'source_name', None)
+                    if item_source_name == source_name:
+                        source_already_in_scene = True
+                        break
+                
+                if source_already_in_scene:
+                    self.logger.info(f"Source {source_name} already in scene {scene_name} - skipping addition")
+                else:
+                    scene_item_id = await self.obs_manager.add_source_to_scene(scene_name, source_name)
+                    if not scene_item_id:
+                        self.logger.error(f"Failed to recover source {source_name} for scene {scene_name}")
+                        return
+
+            
             self.managed_inputs.add(source_name)
 
             # Mute video audio if it's a video file
@@ -458,6 +518,8 @@ class ContentManager:
             scene_name = media_file.get_scene_name()
             source_name = media_file.get_source_name()
 
+            self.logger.debug(f"Configuring transform for {media_file.filename} in scene {scene_name}")
+
             # Get scene item ID
             scene_item_id = await self.obs_manager.get_scene_item_id(scene_name, source_name)
 
@@ -465,27 +527,30 @@ class ContentManager:
                 self.logger.error(f"Could not get scene item ID for {source_name}")
                 return
 
-            # Set transform to fit canvas and center
+            self.logger.debug(f"Got scene_item_id={scene_item_id} for {source_name}")
+
+            # Fill canvas completely with centered content (no black bars)
+            # OBS_BOUNDS_SCALE_OUTER: scales to fill bounds, overflow hidden by projection
+            # alignment=5 (top-left) anchors the bounds box at position (0,0)
+            # boundsAlignment=0 (center) centers the content within the bounds
             transform = {
                 "positionX": 0,
                 "positionY": 0,
-                "scaleX": 1.0,
-                "scaleY": 1.0,
-                "cropLeft": 0,
-                "cropTop": 0,
-                "cropRight": 0,
-                "cropBottom": 0,
-                "boundsType": "OBS_BOUNDS_SCALE_INNER",
-                "boundsWidth": self.settings.VIDEO_WIDTH,
-                "boundsHeight": self.settings.VIDEO_HEIGHT
+                "alignment": 5,
+                "boundsType": "OBS_BOUNDS_SCALE_OUTER",
+                "boundsWidth": float(self.settings.VIDEO_WIDTH),
+                "boundsHeight": float(self.settings.VIDEO_HEIGHT),
+                "boundsAlignment": 0
             }
 
-            await self.obs_manager.set_scene_item_transform(scene_name, scene_item_id, transform)
+            self.logger.debug(f"Applying transform with bounds {self.settings.VIDEO_WIDTH}x{self.settings.VIDEO_HEIGHT}")
+            result = await self.obs_manager.set_scene_item_transform(scene_name, scene_item_id, transform)
+            self.logger.debug(f"Transform result: {result}")
 
         except Exception as e:
             self.logger.error(f"Failed to configure transform for {media_file.filename}: {e}")
     
-    async def _calculate_media_durations(self) -> None:
+    async def _calculate_media_durations(self, media_files: Optional[List[MediaFile]] = None) -> None:
         """
         Calculate duration for each media file BEFORE creating OBS scenes.
 
@@ -495,9 +560,11 @@ class ContentManager:
         - No dependency on OBS state or WebSocket API
         - Durations are stored in MediaFile objects for use during playback
         """
+        if media_files is None:
+            media_files = self.media_files
         self.logger.info("Detecting media durations using FFprobe...")
 
-        for media_file in self.media_files:
+        for media_file in media_files:
             try:
                 if media_file.is_image:
                     # Images use configured slide duration
@@ -535,7 +602,7 @@ class ContentManager:
                 media_file.duration = 8.0 if media_file.is_image else 10.0
 
         self.logger.info(
-            f"Duration detection complete: {len(self.media_files)} files processed"
+            f"Duration detection complete: {len(media_files)} files processed"
         )
 
     async def _get_video_duration_ffprobe(self, file_path: Path) -> Optional[float]:
@@ -592,7 +659,10 @@ class ContentManager:
 
                 if duration_str:
                     duration_seconds = float(duration_str)
-                    return duration_seconds
+                    if duration_seconds > 0.5:
+                        return duration_seconds
+                    self.logger.warning(f"FFprobe returned near-zero duration ({duration_seconds}s) for {file_path.name}")
+                    return None
                 else:
                     self.logger.warning(f"FFprobe returned no duration for {file_path.name}")
                     return None
@@ -650,35 +720,36 @@ class ContentManager:
         """Process content rotation logic."""
         if not self.rotation_active or not self.media_files:
             return
-        
+
         try:
+            # Snapshot state under lock
+            async with self._rotation_lock:
+                if not self.rotation_active or not self.media_files:
+                    return
+                media_files = list(self.media_files)
+                current_index = self.current_index
+                playback_start = self.playback_start_time
+                transition_offset = self.transition_offset
+
             current_time = time.time()
-            elapsed_time = current_time - self.playback_start_time
-            
+            elapsed_time = current_time - playback_start
+
             # Get current media file
-            if self.current_index >= len(self.media_files):
-                self.current_index = 0
-            
-            current_media = self.media_files[self.current_index]
+            if current_index >= len(media_files):
+                current_index = 0
+
+            current_media = media_files[current_index]
 
             # MANUAL TRANSITION TIMING (configured in settings or scheduler):
             # User controls exactly when transition starts via TRANSITION_START_OFFSET
             # Example: 2.0 = start transition 2 seconds before media ends
-            transition_offset = self.transition_offset
-
             if current_media.is_video:
                 # For videos: Start transition BEFORE video ends
-                # This allows the stinger to play while video is still running
-                # Video plays for (duration - offset), then transition starts
                 switch_time = current_media.duration - transition_offset
-
-                # Ensure switch_time is never negative
                 if switch_time < 0:
                     switch_time = 0
             else:
                 # For images: Display for FULL duration, then transition
-                # Images are static, so they should show for the complete IMAGE_DISPLAY_TIME
-                # The transition happens AFTER the full display time
                 switch_time = current_media.duration
 
             # Debug logging for transition timing (only log near transition)
@@ -691,12 +762,13 @@ class ContentManager:
 
             if elapsed_time >= switch_time:
                 # Time to switch to next content
-                next_index = (self.current_index + 1) % len(self.media_files)
-                self.logger.info(f"Switching from {current_media.filename} to {self.media_files[next_index].filename}")
+                next_index = (current_index + 1) % len(media_files)
+                self.logger.info(f"Switching from {current_media.filename} to {media_files[next_index].filename}")
                 await self._switch_to_media(next_index)
-                self.current_index = next_index
-                self.playback_start_time = current_time
-                
+                async with self._rotation_lock:
+                    self.current_index = next_index
+                    self.playback_start_time = current_time
+
         except Exception as e:
             self.logger.error(f"Content rotation error: {e}")
     
@@ -731,38 +803,27 @@ class ContentManager:
         """
         try:
             old_folder = self.content_folder
+            old_offset = self.transition_offset
             self.logger.info(f"Switching content folder: {old_folder.name} → {new_folder.name}")
 
-            # Update internal properties
+            # Update internal properties (used by _scan_content_directory)
             self.content_folder = new_folder
             self.transition_offset = transition_offset
 
             # Create folder if it doesn't exist
             new_folder.mkdir(parents=True, exist_ok=True)
 
-            # Temporarily override settings for scan
-            original_content_dir = self.settings.CONTENT_DIR
-            original_transition_offset = self.settings.TRANSITION_START_OFFSET
+            # Rescan and update content
+            await self.scan_and_update_content()
 
-            try:
-                self.settings.CONTENT_DIR = new_folder
-                self.settings.TRANSITION_START_OFFSET = transition_offset
-
-                # Rescan and update content
-                await self.scan_and_update_content()
-
-                self.logger.info(f"Content folder switched successfully to: {new_folder.name}")
-                return True
-
-            finally:
-                # Restore original settings
-                self.settings.CONTENT_DIR = original_content_dir
-                self.settings.TRANSITION_START_OFFSET = original_transition_offset
+            self.logger.info(f"Content folder switched successfully to: {new_folder.name}")
+            return True
 
         except Exception as e:
             self.logger.error(f"Failed to switch content folder: {e}")
             # Revert to old folder on error
             self.content_folder = old_folder
+            self.transition_offset = old_offset
             return False
 
     async def on_content_change(self, file_path: Path) -> None:
@@ -778,13 +839,21 @@ class ContentManager:
             self.logger.error(f"Error handling content change: {e}")
 
     async def on_file_deleted(self, filename: str) -> None:
-        """Handle file deletion from WebDAV sync."""
-        try:
-            self.logger.info(f"Handling deletion for: {filename}")
+        """Handle file deletion from WebDAV sync.
 
-            # Generate scene and source names based on filename
-            scene_name = f"{filename}_scene"
-            source_name = f"{filename}_source"
+        Args:
+            filename: May be a relative path (e.g. "subfolder/video.mp4") from WebDAV.
+                      We extract the basename to match scene/source naming conventions.
+        """
+        try:
+            # WebDAV passes relative paths like "subfolder/video.mp4" but scenes
+            # are keyed by basename (e.g. "video.mp4_scene"). Extract basename.
+            basename = Path(filename).name
+            self.logger.info(f"Handling deletion for: {filename} (basename: {basename})")
+
+            # Generate scene and source names based on basename (must match get_scene_name/get_source_name)
+            scene_name = MediaFile._sanitize_obs_name(f"{basename}_scene")
+            source_name = MediaFile._sanitize_obs_name(f"{basename}_source")
 
             # Remove the scene from OBS
             if scene_name in self.managed_scenes:
@@ -798,14 +867,18 @@ class ContentManager:
                 self.managed_inputs.discard(source_name)
                 self.logger.info(f"Removed OBS input: {source_name}")
 
-            # Remove from media files list
-            self.media_files = [mf for mf in self.media_files if mf.filename != filename]
+            # Update media files and rotation state under lock
+            need_switch = False
+            async with self._rotation_lock:
+                self.media_files = [mf for mf in self.media_files if mf.filename != basename]
+                if self.current_scene == scene_name and self.media_files:
+                    self.current_index = 0
+                    self.playback_start_time = time.time()
+                    need_switch = True
 
-            # If we removed the currently playing media, switch to next
-            if self.current_scene == scene_name and self.media_files:
-                self.current_index = 0
+            # Switch scene outside the lock (involves OBS WebSocket call)
+            if need_switch:
                 await self._switch_to_media(0)
-                self.playback_start_time = time.time()
 
         except Exception as e:
             self.logger.error(f"Error handling file deletion for {filename}: {e}")

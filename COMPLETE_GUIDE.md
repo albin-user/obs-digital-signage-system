@@ -1,7 +1,7 @@
 # OBS Digital Signage Automation System - Complete Guide
 
-**Version**: 2.0
-**Last Updated**: October 2025
+**Version**: 2.2.1
+**Last Updated**: February 2026
 **Production Ready**: Yes ✅
 
 ---
@@ -9,16 +9,20 @@
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [Prerequisites](#prerequisites)
-3. [Installation Guide - Ubuntu Desktop](#installation-guide---ubuntu-desktop)
-4. [Installation Guide - Windows](#installation-guide---windows)
-5. [OBS Studio Configuration](#obs-studio-configuration)
-6. [Ubuntu Desktop Settings Configuration](#ubuntu-desktop-settings-configuration)
-7. [System Configuration](#system-configuration)
-8. [Adding Content](#adding-content)
-9. [Running the System](#running-the-system)
-10. [Troubleshooting](#troubleshooting)
-11. [Advanced Configuration](#advanced-configuration)
+2. [What You Need to Deploy](#what-you-need-to-deploy)
+3. [Prerequisites](#prerequisites)
+4. [Installation Guide - Ubuntu Desktop](#installation-guide---ubuntu-desktop)
+5. [Installation Guide - Windows](#installation-guide---windows)
+6. [OBS Studio Configuration](#obs-studio-configuration)
+7. [Ubuntu Desktop Settings Configuration](#ubuntu-desktop-settings-configuration)
+8. [System Configuration](#system-configuration)
+9. [Adding Content](#adding-content)
+10. [Running the System](#running-the-system)
+11. [Troubleshooting](#troubleshooting)
+12. [Advanced Configuration](#advanced-configuration)
+13. [Security & Credentials](#security--credentials)
+14. [Transferring from Windows to Ubuntu](#transferring-from-windows-to-ubuntu)
+15. [Deployment Verification Checklist](#deployment-verification-checklist)
 
 ---
 
@@ -53,6 +57,36 @@ The OBS Digital Signage Automation System is a professional digital signage solu
 - ✅ Health monitoring and auto-recovery
 - ✅ Cross-platform (Windows & Ubuntu)
 - ✅ Portable - runs from any folder
+- ✅ Time-based scheduling (recurring + one-time events)
+- ✅ Web admin panel for schedule management
+- ✅ Per-schedule audio volume control
+- ✅ Webhook notifications
+
+---
+
+## What You Need to Deploy
+
+The repository contains documentation, tests, and development files that aren't needed on the target machine. Here's the short version:
+
+**Required (about 25 files):**
+- The entire `src/` directory (application code)
+- `requirements.txt` and `pyproject.toml` (dependencies)
+- One config template from `config/` for your OS (e.g., `ubuntu_prod.env.example`)
+- One installer script (`install.sh` or `INSTALL.bat`)
+- One start script (`start.sh` or `START.bat`)
+
+**Not required:**
+- Documentation files (`README.md`, `COMPLETE_GUIDE.md`, `CHANGELOG.md`) -- helpful but the system runs without them
+- `tests/`, `claude.md`, `obs_ws_protocol.md` -- excluded from the repo (local dev files only)
+
+**Created automatically:**
+- `venv/` -- the installer creates this
+- `config/*.env` -- the installer copies from `.example`
+- `content/`, `logs/`, `config/schedules.json` -- created at runtime
+
+See [File Structure Reference](#file-structure-reference) in the appendix for the complete list.
+
+**Pre-flight check:** After installing, run `python src/main.py --check` to verify config, FFprobe, OBS connection, and WebDAV before starting the full system.
 
 ---
 
@@ -166,12 +200,7 @@ obs --version
 
 ### Step 5: Get the System Files
 
-**If you already have the system on a Windows PC**, see **[TRANSFER_GUIDE.md](TRANSFER_GUIDE.md)** for detailed instructions on transferring files from Windows to Ubuntu using:
-- USB drive (easiest)
-- Network share
-- Cloud storage (Dropbox, Google Drive)
-- Git/GitHub
-- Direct network transfer
+**If you already have the system on a Windows PC**, see [Transferring from Windows to Ubuntu](#transferring-from-windows-to-ubuntu) for detailed instructions on transferring files using USB drive, SCP/SSH, Git, or cloud storage.
 
 **If downloading fresh**, choose a location for the system:
 
@@ -182,7 +211,7 @@ cd ~
 **Option A: Clone from GitHub (Recommended)**
 
 ```bash
-git clone https://github.com/jensen-user/obs-digital-signage-system.git
+git clone https://github.com/albin-user/obs-digital-signage-system.git
 cd obs-digital-signage-system
 
 # Make scripts executable (REQUIRED on Linux)
@@ -192,8 +221,8 @@ chmod +x install.sh start.sh
 **Option B: If you have a zip file**
 
 ```bash
-unzip obs-digital-signage-automation-system.zip
-cd obs-digital-signage-automation-system
+unzip obs-digital-signage-system.zip
+cd obs-digital-signage-system
 
 # Make scripts executable (REQUIRED on Linux)
 chmod +x install.sh start.sh
@@ -333,10 +362,11 @@ Verify installation:
 3. Wait for installation to complete
 
 The script will:
-1. Check Python installation
-2. Create virtual environment
-3. Install dependencies
-4. Create configuration file
+1. Check Python version (3.10+ required)
+2. Check for FFmpeg/FFprobe (warns if missing)
+3. Create virtual environment
+4. Install Python dependencies
+5. Create configuration file from template
 
 ### Step 6: Configure the System
 
@@ -503,7 +533,7 @@ Before running the full system, test the connection:
 
 **Ubuntu:**
 ```bash
-cd obs-digital-signage-automation-system
+cd obs-digital-signage-system
 ./start.sh
 ```
 
@@ -633,40 +663,22 @@ Create a startup application to launch the system automatically.
 2. Click **Add**
 3. Fill in:
    - **Name**: `OBS Digital Signage`
-   - **Command**: `/home/your_username/obs-digital-signage-automation-system/start.sh`
+   - **Command**: `/home/your_username/obs-digital-signage-system/start.sh`
    - **Comment**: `Starts OBS digital signage system`
 4. Click **Add**
 
-Replace `/home/your_username/obs-digital-signage-automation-system/` with your actual path.
+Replace `/home/your_username/obs-digital-signage-system/` with your actual path.
 
 #### Method 2: Using systemd (Advanced)
 
-Create a systemd service:
+A template service file is included at `deployment/obs-signage.service`. Copy and customise it:
 
 ```bash
+sudo cp deployment/obs-signage.service /etc/systemd/system/obs-signage.service
 sudo nano /etc/systemd/system/obs-signage.service
 ```
 
-Add:
-
-```ini
-[Unit]
-Description=OBS Digital Signage System
-After=graphical.target
-
-[Service]
-Type=simple
-User=your_username
-WorkingDirectory=/home/your_username/obs-digital-signage-automation-system
-ExecStart=/home/your_username/obs-digital-signage-automation-system/start.sh
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=graphical.target
-```
-
-Replace `your_username` and paths as needed.
+Replace `your_username` and paths as needed. The template includes `AmbientCapabilities=CAP_NET_BIND_SERVICE` so the service can bind to port 80 without running as root.
 
 Enable and start:
 
@@ -828,6 +840,54 @@ AUDIO_BUFFER_SIZE=1024
 - Default settings work for most cases
 - Only change if you have audio issues
 
+#### Scheduling Settings
+
+```ini
+# ============================================================================
+# Scheduling Settings
+# ============================================================================
+SCHEDULE_ENABLED=true
+TIMEZONE=UTC
+SCHEDULE_CHECK_INTERVAL=60
+MANUAL_CONTENT_FOLDER=
+```
+
+**Explanation:**
+- `SCHEDULE_ENABLED`: Enable/disable automatic scheduling (true/false)
+- `TIMEZONE`: Your local timezone for schedule calculations (e.g., `UTC`, `America/New_York`, `Europe/London`)
+- `SCHEDULE_CHECK_INTERVAL`: How often to check for schedule changes (seconds)
+- `MANUAL_CONTENT_FOLDER`: Override folder for testing (only when SCHEDULE_ENABLED=false)
+
+#### Web Admin Panel Settings
+
+```ini
+# ============================================================================
+# Web Admin Panel
+# ============================================================================
+WEB_UI_ENABLED=true
+WEB_UI_PORT=80
+```
+
+**Explanation:**
+- `WEB_UI_ENABLED`: Enable/disable the web admin panel (true/false)
+- `WEB_UI_PORT`: Port for the web UI (default: 80)
+
+#### Notification Settings
+
+```ini
+# ============================================================================
+# Notifications (Optional)
+# ============================================================================
+NOTIFICATION_ENABLED=false
+NOTIFICATION_WEBHOOK_URL=
+```
+
+**Explanation:**
+- `NOTIFICATION_ENABLED`: Enable HTTP webhook notifications on events
+- `NOTIFICATION_WEBHOOK_URL`: URL to POST notifications to (e.g., Slack webhook)
+
+Events that trigger notifications: system startup, shutdown, OBS crash, WebDAV sync failure.
+
 #### Logging
 
 ```ini
@@ -943,7 +1003,7 @@ content/
 
 **Ubuntu:**
 ```bash
-cd ~/obs-digital-signage-automation-system
+cd ~/obs-digital-signage-system
 ./start.sh
 ```
 
@@ -1008,7 +1068,7 @@ INFO: Switching from 001.mp4 to 002.mp4
 
 **Ubuntu:**
 ```bash
-tail -f ~/obs-digital-signage-automation-system/logs/digital_signage.log
+tail -f ~/obs-digital-signage-system/logs/digital_signage.log
 ```
 
 **Windows:**
@@ -1208,10 +1268,10 @@ gsettings get org.gnome.desktop.session idle-delay
 **Check logs:**
 ```bash
 # Ubuntu
-tail -100 ~/obs-digital-signage-automation-system/logs/digital_signage.log
+tail -100 ~/obs-digital-signage-system/logs/digital_signage.log
 
 # Look for ERROR messages
-grep ERROR ~/obs-digital-signage-automation-system/logs/digital_signage.log
+grep ERROR ~/obs-digital-signage-system/logs/digital_signage.log
 ```
 
 **Common causes:**
@@ -1242,11 +1302,78 @@ grep ERROR ~/obs-digital-signage-automation-system/logs/digital_signage.log
 
 ---
 
+## Web Admin Panel (v2.2.0)
+
+The web admin panel provides a browser-based interface for managing schedules and monitoring system status.
+
+### Accessing the Admin Panel
+
+The panel starts automatically with the system and is accessible at:
+
+```
+http://<host-ip>:80
+```
+
+For example: `http://localhost:80` or `http://192.168.1.100:80` from another device on the network.
+
+**Note:** Port 80 requires root/sudo on Linux. The system runs on port 80 by default. To change the port, set `WEB_UI_PORT` in your config file.
+
+### Dashboard
+
+The dashboard shows real-time system status:
+- **OBS Connection**: Whether OBS Studio is connected
+- **Currently Playing**: The media file currently on screen
+- **Active Schedule**: Which schedule is currently active
+- **Last Sync**: Time since last WebDAV synchronization
+- **Uptime**: How long the system has been running
+
+Status auto-refreshes every 5 seconds.
+
+### Managing Schedules
+
+**Creating a Schedule:**
+1. Click "Add Schedule" — the name field auto-focuses for quick entry
+2. Fill in the basic details:
+   - **Name**: Descriptive name (e.g., "Sunday Service")
+   - **Type**: Recurring (weekly) or One-time (specific date)
+   - **Day/Date**: Which day (recurring) or date (one-time)
+   - **Start/End Time**: When the schedule is active
+   - **Folder**: Content folder on Storebox NAS (browse from dropdown)
+   - **Enabled**: Turn the schedule on or off
+3. Expand **"Advanced settings"** if needed (transition, offset, image time, volume)
+4. Click "Save"
+
+**Folder Preview:** When you select a folder, a preview box shows the file count (e.g., "8 files (5 images, 3 videos)") and file names, so you can verify you picked the right content.
+
+**Editing a Schedule:**
+- Click "Edit" on any schedule card to modify its settings
+
+**Deleting a Schedule:**
+- Click "Delete" on any schedule card — a styled confirmation dialog appears (press ESC or Cancel to dismiss)
+
+**Default Schedule:**
+- The default schedule always exists and cannot be deleted
+- Click "Edit" to change its folder, transition, or volume settings
+- Advanced settings auto-expand when editing the default (since those are the main fields)
+- It activates whenever no other schedule matches the current time
+
+### Conflict Detection
+
+The system warns about overlapping schedules:
+- **Error (red)**: Two recurring schedules on the same day and time, or two one-time events on the same date and time. These are blocked from saving.
+- **Warning (yellow)**: A one-time event overrides a recurring schedule. You can confirm to allow this.
+
+### Storebox Folder Browser
+
+When creating/editing a schedule, the folder dropdown shows available folders from your Storebox NAS (WebDAV). The dropdown displays loading/error states and paths are restricted to the NAS for security.
+
+---
+
 ## Advanced Configuration
 
 ### Customizing Display Time Per File
 
-Currently, all images display for the same time (`IMAGE_DISPLAY_TIME`). To customize per file, you would need to modify the code. Contact support or check `claude.md` for development notes.
+Currently, all images display for the same time (`IMAGE_DISPLAY_TIME`). To customize per file, you would need to modify the source code in `src/core/content_manager.py`.
 
 ### Adding Multiple Audio Tracks
 
@@ -1259,7 +1386,7 @@ The system currently supports one background audio file. For multiple tracks or 
 **Ubuntu (SSH):**
 ```bash
 ssh user@signage-computer
-tail -f ~/obs-digital-signage-automation-system/logs/digital_signage.log
+tail -f ~/obs-digital-signage-system/logs/digital_signage.log
 ```
 
 **Windows (Remote Desktop):**
@@ -1291,13 +1418,25 @@ To run multiple signage displays:
 
 Or use the same path for identical content across all displays.
 
-### Scheduled Content
+### Time-Based Scheduling (v2.2.0+)
 
-The system doesn't natively support time-based content scheduling. For this feature:
+The system supports automatic time-based content scheduling through the web admin panel.
 
-1. **Option A:** Use cron jobs (Linux) or Task Scheduler (Windows) to swap content folders
-2. **Option B:** Use different WebDAV paths and switch them via script
-3. **Option C:** Contact for custom development
+**Schedule Types:**
+- **Recurring**: Repeats every week on a specific day (e.g., every Sunday 08:00-13:30)
+- **One-time**: Plays only on a specific date (e.g., Christmas Eve 2026-12-24)
+- **Default**: Fallback content when no other schedule is active
+
+**Priority Order:**
+1. One-time events (highest priority)
+2. Recurring schedules
+3. Default schedule (always last fallback)
+
+**Per-Schedule Settings:**
+Each schedule can have its own transition type, transition offset, image display time, and audio volume.
+
+**Management:**
+All schedules are managed through the web admin panel at `http://<host>:80`. See [Web Admin Panel](#web-admin-panel-v220) below.
 
 ### Monitoring and Alerts
 
@@ -1323,15 +1462,206 @@ The systemd service automatically restarts on crash (if configured).
 
 ---
 
+## Security & Credentials
+
+### Configuration Files
+
+**Example files (safe to share)** — contain NO credentials, safe to commit to Git:
+- `config/windows_test.env.example`
+- `config/ubuntu_prod.env.example`
+- `config/windows_prod.env.example`
+
+**Your personal config files (NEVER share)** — contain YOUR passwords:
+- `config/windows_test.env`
+- `config/ubuntu_prod.env`
+- `config/windows_prod.env`
+
+The `.gitignore` file prevents accidental commits of credential files. Even `git add .` will skip them.
+
+### How Installation Creates Your Config
+
+1. Installer checks if your config file exists
+2. If not, copies the `.example` template
+3. You edit the copy with your actual credentials
+
+### Credential Types
+
+**OBS WebSocket Password** (`OBS_PASSWORD`):
+- Connects to OBS Studio via WebSocket
+- Only accessible on localhost by default
+- Leave empty if OBS has no password set
+
+**WebDAV Credentials** (`WEBDAV_USERNAME`, `WEBDAV_PASSWORD`):
+- Login for your Synology NAS or WebDAV server
+- Network accessible — use strong, unique passwords
+- Consider a dedicated user account with limited folder permissions
+
+**WebDAV Server URL** (`WEBDAV_HOST`):
+- Use HTTPS (not HTTP) for encrypted transit
+- Consider VPN for remote access instead of exposing NAS directly
+
+### Offline Mode (No Credentials Needed)
+
+Leave WebDAV settings empty and manually place files in `content/`:
+```ini
+WEBDAV_HOST=
+WEBDAV_USERNAME=
+WEBDAV_PASSWORD=
+```
+
+### If Credentials Are Accidentally Committed
+
+1. **Change passwords immediately** on your WebDAV server and OBS
+2. Remove from Git:
+   ```bash
+   git rm --cached config/windows_test.env
+   git commit -m "Remove credentials file"
+   ```
+3. If pushed to GitHub, consider the repository compromised
+4. For full history removal:
+   ```bash
+   git filter-branch --force --index-filter \
+     "git rm --cached --ignore-unmatch config/windows_test.env" \
+     --prune-empty --tag-name-filter cat -- --all
+   ```
+
+### Security Checklist
+
+- [ ] `.gitignore` includes `config/*.env` (not `.example`)
+- [ ] `.env.example` files have NO real passwords
+- [ ] `git status` does NOT show `config/*.env` files
+- [ ] WebDAV uses HTTPS (not HTTP)
+
+---
+
+## Transferring from Windows to Ubuntu
+
+If you already have the system running on Windows and want to deploy it on Ubuntu, here are the transfer methods.
+
+### Method 1: USB Drive (Easiest)
+
+**On Windows:**
+1. Insert USB drive (any format: FAT32, exFAT, NTFS)
+2. Copy the `obs-digital-signage-system` folder to the USB drive
+3. Safely eject the USB
+
+**On Ubuntu:**
+1. Insert USB — Ubuntu auto-mounts it at `/media/username/USB_NAME`
+2. Copy to home directory:
+   ```bash
+   cp -r /media/$USER/*/obs-digital-signage-system ~/
+   ```
+3. Make scripts executable and install:
+   ```bash
+   cd ~/obs-digital-signage-system
+   chmod +x install.sh start.sh
+   ./install.sh
+   ```
+
+### Method 2: SCP/SSH (Same Network)
+
+**On Ubuntu** — install and enable SSH:
+```bash
+sudo apt install openssh-server -y
+sudo systemctl enable ssh
+ip addr show  # Note the IP address
+```
+
+**On Windows** — transfer via SCP (built into Windows 10/11):
+```cmd
+scp -r obs-digital-signage-system ubuntu_user@192.168.1.50:/home/ubuntu_user/
+```
+
+Or use [WinSCP](https://winscp.net/) for a graphical interface.
+
+### Method 3: Git/GitHub (Best for Ongoing Updates)
+
+**On Windows:**
+```cmd
+cd obs-digital-signage-system
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/you/obs-digital-signage-system.git
+git push -u origin main
+```
+
+**On Ubuntu:**
+```bash
+git clone https://github.com/you/obs-digital-signage-system.git
+cd obs-digital-signage-system
+chmod +x install.sh start.sh
+./install.sh
+```
+
+The `.gitignore` protects credential files automatically.
+
+### Method 4: Cloud Storage
+
+Upload the folder (or a zip of it) to Dropbox, Google Drive, or OneDrive on Windows, then download it on Ubuntu via the browser.
+
+### After Any Transfer
+
+Regardless of method:
+
+```bash
+cd ~/obs-digital-signage-system
+chmod +x install.sh start.sh   # Make scripts executable
+./install.sh                    # Create venv and install deps
+nano config/ubuntu_prod.env     # Edit config for Ubuntu
+./start.sh                      # Start the system
+```
+
+**Important**: Do NOT reuse the Windows config file. The installer creates a fresh `ubuntu_prod.env` from the template. You only need to copy over your WebDAV credentials and OBS password.
+
+Files you do NOT need to transfer: `venv/`, `logs/`, `content/` (will be synced from WebDAV), `config/*.env` (platform-specific).
+
+---
+
+## Deployment Verification Checklist
+
+After installation, use this checklist to verify everything works.
+
+### Pre-Flight Check
+
+Run the automated check (fastest way to verify):
+```bash
+python src/main.py --check
+```
+
+This validates config, FFprobe, OBS connection, and WebDAV in one command.
+
+### Manual Verification
+
+**Content Management:**
+- [ ] Add an image to `content/` — appears in rotation within 30 seconds
+- [ ] Add a video — plays with correct duration (not 10s fallback)
+- [ ] Remove a file — its scene is removed from OBS
+
+**WebDAV Sync (if configured):**
+- [ ] Upload file to WebDAV server — downloads within 30 seconds
+- [ ] Delete file from WebDAV — removed from content and OBS
+
+**Transitions:**
+- [ ] Content transitions smoothly between files
+- [ ] If using stinger: transition starts before video ends (check `TRANSITION_START_OFFSET`)
+
+**Performance:**
+- [ ] Initial content scan completes in < 2 seconds
+- [ ] System responsive during rotation
+- [ ] Memory usage < 500 MB (check with `htop` or Task Manager)
+
+**Portability:**
+- [ ] Stop system, move folder to different location, start again — works
+
+---
+
 ## Getting Help
 
 ### Documentation
 
 1. **README.md** - Quick start guide
-2. **SECURITY.md** - Credential management
-3. **INSTALLATION_CHECKLIST.md** - Setup verification
-4. **claude.md** - Complete development history
-5. **This guide** - Comprehensive documentation
+2. **This guide** - Full documentation (security, transfers, troubleshooting)
 
 ### Log Files
 
@@ -1362,39 +1692,76 @@ A: Not recommended. One instance per computer is best.
 
 ### File Structure Reference
 
+#### Required for deployment
+
+These are the only files needed to install and run the system. The total is about 25 files.
+
 ```
-obs-digital-signage-automation-system/
-├── config/
-│   ├── ubuntu_prod.env.example      # Example config (Ubuntu)
-│   ├── ubuntu_prod.env              # Your config (Ubuntu) - DO NOT COMMIT
-│   ├── windows_test.env.example     # Example config (Windows)
-│   └── windows_test.env             # Your config (Windows) - DO NOT COMMIT
-├── content/                         # Your media files (auto-created)
-├── logs/                            # System logs (auto-created)
-├── src/                             # Python source code
-│   ├── main.py                      # Entry point
+obs-digital-signage-system/
+├── src/                              # Application code (all files required)
+│   ├── main.py                       #   Entry point (also supports --check flag)
+│   ├── __init__.py
 │   ├── config/
-│   │   └── settings.py              # Settings loader
+│   │   ├── __init__.py
+│   │   └── settings.py               #   Configuration loader
 │   ├── core/
-│   │   ├── obs_manager.py           # OBS control
-│   │   ├── content_manager.py       # Content rotation
-│   │   ├── audio_manager.py         # Background audio
-│   │   ├── webdav_client.py         # Cloud sync
-│   │   └── file_monitor.py          # File watching
+│   │   ├── __init__.py
+│   │   ├── obs_manager.py            #   OBS Studio control
+│   │   ├── content_manager.py        #   Scene rotation
+│   │   ├── audio_manager.py          #   Background audio
+│   │   ├── scheduler.py              #   Time-based scheduling
+│   │   ├── webdav_client.py          #   Cloud sync
+│   │   └── file_monitor.py           #   File watching
+│   ├── web/
+│   │   ├── __init__.py
+│   │   ├── app.py                    #   Flask admin panel
+│   │   ├── schedule_store.py         #   Schedule persistence
+│   │   ├── storebox_browser.py       #   NAS folder browser
+│   │   ├── templates/index.html      #   Admin panel page
+│   │   └── static/
+│   │       ├── app.js                #   Admin panel JS
+│   │       └── style.css             #   Admin panel styles
 │   └── utils/
-│       ├── logging_config.py        # Logging setup
-│       └── system_utils.py          # Utilities
-├── .gitignore                       # Git exclusions
-├── claude.md                        # Development history
-├── INSTALLATION_CHECKLIST.md        # Setup checklist
-├── INSTALL.bat                      # Windows installer
-├── install.sh                       # Ubuntu installer
-├── README.md                        # Quick guide
-├── requirements.txt                 # Python dependencies
-├── SECURITY.md                      # Security guide
-├── START.bat                        # Windows launcher
-├── start.sh                         # Ubuntu launcher
-└── TEST.bat                         # Connection test (Windows)
+│       ├── __init__.py
+│       ├── logging_config.py         #   Log setup
+│       ├── notifications.py          #   Webhook alerts
+│       └── system_utils.py           #   System helpers
+├── config/
+│   ├── ubuntu_prod.env.example       #   Linux config template
+│   ├── windows_test.env.example      #   Windows dev config template
+│   └── windows_prod.env.example      #   Windows prod config template
+├── requirements.txt                  #   Python dependencies
+├── pyproject.toml                    #   Project metadata
+│
+│   --- Pick one per platform ---
+├── install.sh  OR  INSTALL.bat       #   Installer
+└── start.sh    OR  START.bat         #   Launcher
+```
+
+**Created automatically at runtime** (don't ship these, the installer/system creates them):
+
+```
+├── config/*.env              # Your personal config (copied from .example)
+├── config/schedules.json     # Schedule data (created by web UI on first use)
+├── content/                  # Media files (populated by WebDAV sync or manually)
+├── logs/                     # System logs
+└── venv/                     # Python virtual environment
+```
+
+#### Optional / development only
+
+These are not needed to run the system. Include them if you want docs or testing.
+
+```
+├── tests/                    # Unit tests (pytest, 82 tests)
+├── deployment/
+│   └── obs-signage.service   # Systemd service template (Linux auto-start)
+├── start_prod.bat            # Windows production launcher (alternative to START.bat)
+├── TEST.bat / test.sh        # OBS connection test scripts
+├── status.sh                 # Health check script (Linux)
+├── README.md                 # Quick start guide
+├── COMPLETE_GUIDE.md         # This file -- full documentation
+└── CHANGELOG.md              # Version history
 ```
 
 ### Python Dependencies
