@@ -163,7 +163,7 @@ class OBSManager:
             else:
                 # Linux environment setup
                 env = os.environ.copy()
-                env['DISPLAY'] = ':0'
+                env.setdefault('DISPLAY', ':0')
 
                 # Remove OBS .sentinel folder to prevent safe mode dialog
                 # OBS 32.0+ removed --disable-shutdown-check, so delete .sentinel folder

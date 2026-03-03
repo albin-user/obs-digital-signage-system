@@ -38,6 +38,27 @@ def _safe_float(key: str, default: float) -> float:
         return default
 
 
+def get_env_file_path() -> Path:
+    """Get the platform-appropriate .env config file path.
+
+    Shared by Settings._get_env_file() and the setup wizard so the
+    path logic lives in one place.
+    """
+    config_dir = Path(__file__).parent.parent.parent / "config"
+    env = os.getenv("ENVIRONMENT", "development")
+    plat = platform.system().lower()
+    if env == "production":
+        if plat == "windows":
+            return config_dir / "windows_prod.env"
+        else:
+            return config_dir / "ubuntu_prod.env"
+    else:
+        if plat == "windows":
+            return config_dir / "windows_test.env"
+        else:
+            return config_dir / "ubuntu_prod.env"
+
+
 class Settings:
     """Cross-platform configuration management."""
 
@@ -63,22 +84,7 @@ class Settings:
     
     def _get_env_file(self) -> Path:
         """Get environment configuration file."""
-        config_dir = Path(__file__).parent.parent.parent / "config"
-
-        # Determine config file based on platform and environment
-        if self.ENVIRONMENT == "production":
-            if self.platform == "windows":
-                env_file = config_dir / "windows_prod.env"
-            else:
-                env_file = config_dir / "ubuntu_prod.env"
-        else:
-            # Development/testing
-            if self.platform == "windows":
-                env_file = config_dir / "windows_test.env"
-            else:
-                env_file = config_dir / "ubuntu_prod.env"  # Ubuntu uses production config
-
-        return env_file
+        return get_env_file_path()
     
     def _load_env_file(self, env_file: Path) -> None:
         """Load environment variables from file."""

@@ -546,10 +546,28 @@ async def main() -> None:
         sys.exit(1)
 
 
+def needs_setup() -> bool:
+    """Check if first-run setup is needed (no .env config file exists)."""
+    from config.settings import get_env_file_path
+    return not get_env_file_path().exists()
+
+
 if __name__ == "__main__":
     # Handle --check flag before starting the full system
     if "--check" in sys.argv:
         sys.exit(run_preflight_check())
+
+    # First-run setup wizard
+    if needs_setup():
+        try:
+            from web.setup_app import run_setup_wizard
+        except ImportError as e:
+            print(f"\n  Cannot start setup wizard: {e}")
+            print("  Run 'pip install -r requirements.txt' first, then try again.")
+            sys.exit(1)
+        print("\n  No configuration file found. Starting first-run setup wizard...")
+        run_setup_wizard()
+        print("  Setup complete! Starting system...\n")
 
     # Set event loop policy for Windows
     if platform.system() == "Windows":

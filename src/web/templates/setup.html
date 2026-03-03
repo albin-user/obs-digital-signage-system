@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS Digital Signage — Setup</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="setup-body">
+    <div class="toast-container" id="toast-container"></div>
+
+    {% if already_configured %}
+    <div class="setup-section" style="margin-top: 60px; text-align: center;">
+        <h2>System Already Configured</h2>
+        <p style="color: var(--text-muted); margin-top: 12px;">
+            A configuration file already exists. Restart the system to access the admin panel.
+        </p>
+    </div>
+    {% else %}
+
+    <header>
+        <h1>OBS Digital Signage — Setup</h1>
+        <p class="subtitle">Fill in the fields below to get your signage system running. Only the OBS password is required.</p>
+    </header>
+
+    <form id="setup-form" autocomplete="off">
+
+        <!-- Section 1: OBS Studio -->
+        <div class="setup-section">
+            <h2 class="setup-section-title">OBS Studio Connection <span class="section-hint">Required</span></h2>
+            <div class="form-group">
+                <label for="obs-password">WebSocket Password</label>
+                <input type="password" id="obs-password" name="obs_password" required autofocus>
+                <small class="form-hint">Find this in OBS: Tools &gt; WebSocket Server Settings &gt; Show Connect Info</small>
+            </div>
+            <div class="setup-test-row">
+                <button type="button" class="btn btn-small" id="btn-test-obs">Test Connection</button>
+                <span class="test-result" id="result-obs"></span>
+            </div>
+        </div>
+
+        <!-- Section 2: WebDAV / NAS -->
+        <div class="setup-section">
+            <h2 class="setup-section-title">WebDAV / NAS Connection <span class="section-hint">Optional</span></h2>
+            <p class="setup-section-desc">Leave empty to manage content files manually on this computer.</p>
+            <div class="form-group">
+                <label for="webdav-host">Host URL</label>
+                <input type="text" id="webdav-host" name="webdav_host" placeholder="https://your-nas.example.com:5006">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="webdav-username">Username</label>
+                    <input type="text" id="webdav-username" name="webdav_username">
+                </div>
+                <div class="form-group">
+                    <label for="webdav-password">Password</label>
+                    <input type="password" id="webdav-password" name="webdav_password">
+                </div>
+            </div>
+            <div class="setup-test-row">
+                <button type="button" class="btn btn-small" id="btn-test-webdav">Test Connection</button>
+                <span class="test-result" id="result-webdav"></span>
+            </div>
+        </div>
+
+        <!-- Section 3: Timezone -->
+        <div class="setup-section">
+            <h2 class="setup-section-title">Timezone <span class="section-hint">Optional</span></h2>
+            <div class="form-group">
+                <label for="timezone">System Timezone</label>
+                <select id="timezone" name="timezone">
+                    <option value="UTC" selected>UTC</option>
+                    <optgroup label="Europe">
+                        <option value="Europe/Copenhagen">Europe/Copenhagen</option>
+                        <option value="Europe/London">Europe/London</option>
+                        <option value="Europe/Berlin">Europe/Berlin</option>
+                        <option value="Europe/Paris">Europe/Paris</option>
+                        <option value="Europe/Stockholm">Europe/Stockholm</option>
+                        <option value="Europe/Oslo">Europe/Oslo</option>
+                        <option value="Europe/Helsinki">Europe/Helsinki</option>
+                        <option value="Europe/Amsterdam">Europe/Amsterdam</option>
+                    </optgroup>
+                    <optgroup label="Americas">
+                        <option value="America/New_York">America/New_York (Eastern)</option>
+                        <option value="America/Chicago">America/Chicago (Central)</option>
+                        <option value="America/Denver">America/Denver (Mountain)</option>
+                        <option value="America/Los_Angeles">America/Los_Angeles (Pacific)</option>
+                    </optgroup>
+                    <optgroup label="Asia / Pacific">
+                        <option value="Asia/Tokyo">Asia/Tokyo</option>
+                        <option value="Asia/Shanghai">Asia/Shanghai</option>
+                        <option value="Asia/Kolkata">Asia/Kolkata</option>
+                        <option value="Australia/Sydney">Australia/Sydney</option>
+                    </optgroup>
+                </select>
+                <small class="form-hint">Controls when scheduled content changes happen.</small>
+            </div>
+        </div>
+
+        <!-- Save -->
+        <div class="setup-actions">
+            <button type="submit" class="btn btn-primary btn-large" id="btn-save">Save Configuration &amp; Start System</button>
+        </div>
+    </form>
+
+    <!-- Success state (hidden until save succeeds) -->
+    <div id="setup-success" class="setup-success" style="display: none;">
+        <div class="success-icon">&#10003;</div>
+        <h2>Setup Complete!</h2>
+        <p style="color: var(--text-muted); margin-top: 8px;">The system is now starting. This page will close automatically.</p>
+    </div>
+
+    <script src="/static/setup.js"></script>
+    {% endif %}
+</body>
+</html>

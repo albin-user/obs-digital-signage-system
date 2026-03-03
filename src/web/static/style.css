@@ -241,6 +241,7 @@ input[type="text"],
 input[type="number"],
 input[type="date"],
 input[type="time"],
+input[type="password"],
 select {
     width: 100%;
     padding: 8px 10px;
@@ -485,6 +486,62 @@ input:focus, select:focus {
 }
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* Setup wizard */
+.setup-body {
+    max-width: 640px;
+}
+.setup-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 16px;
+}
+.setup-section-title {
+    font-size: 1.05rem;
+    margin-bottom: 14px;
+}
+.section-hint {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-left: 8px;
+}
+.setup-section-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+.setup-test-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+}
+.test-result {
+    font-size: 0.82rem;
+}
+.test-result.pass { color: var(--green); }
+.test-result.fail { color: var(--red); }
+.setup-actions {
+    text-align: center;
+    margin: 24px 0 40px;
+}
+.btn-large {
+    padding: 12px 32px;
+    font-size: 1rem;
+}
+.setup-success {
+    text-align: center;
+    margin-top: 80px;
+}
+.success-icon {
+    font-size: 3rem;
+    color: var(--green);
+    margin-bottom: 12px;
 }
 
 /* Responsive */
