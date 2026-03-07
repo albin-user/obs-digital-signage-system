@@ -25,7 +25,18 @@ Built for church IT volunteers, but works for any venue: retail, restaurants, of
 
 ## ⚡ Quick Start
 
-### 1. Install Prerequisites
+> For detailed step-by-step instructions (including OBS configuration, desktop settings, and auto-start setup), see **[COMPLETE_GUIDE.md](COMPLETE_GUIDE.md)**.
+
+### 1. Get the Code
+
+```bash
+git clone https://github.com/albin-user/obs-digital-signage-system.git
+cd obs-digital-signage-system
+```
+
+Or download and extract the [ZIP from GitHub](https://github.com/albin-user/obs-digital-signage-system/archive/refs/heads/main.zip).
+
+### 2. Install Prerequisites
 
 **Ubuntu:**
 ```bash
@@ -37,7 +48,7 @@ sudo apt install python3 python3-pip obs-studio ffmpeg -y
 - Install [OBS Studio](https://obsproject.com/download)
 - Install [FFmpeg](https://ffmpeg.org/download.html)
 
-### 2. Run Installation
+### 3. Run Installation
 
 **Ubuntu:**
 ```bash
@@ -50,7 +61,7 @@ chmod +x install.sh
 Double-click INSTALL.bat
 ```
 
-### 3. Configure
+### 4. Configure
 
 Edit your configuration file:
 - **Ubuntu Production**: `config/ubuntu_prod.env`
@@ -77,7 +88,7 @@ TIMEZONE=UTC  # Examples: UTC, America/New_York, Europe/London, Asia/Tokyo
 
 **⚠️ SECURITY NOTE:** Config files are protected by `.gitignore` and won't be uploaded to GitHub.
 
-### 4. Start System
+### 5. Start System
 
 **Ubuntu:**
 ```bash

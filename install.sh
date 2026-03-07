@@ -102,9 +102,20 @@ echo ""
 echo -e "${GREEN}[5/7]${NC} Upgrading pip..."
 python -m pip install --upgrade pip --quiet
 
+# Install SDL2 dev libraries (needed if pygame must build from source)
+echo ""
+echo -e "${GREEN}[6/8]${NC} Checking SDL2 libraries for pygame..."
+if ! dpkg -s libsdl2-dev &> /dev/null; then
+    echo "Installing SDL2 development libraries..."
+    sudo apt install libsdl2-dev libsdl2-mixer-dev libsdl2-image-dev -y 2>/dev/null || \
+        echo -e "${YELLOW}[WARNING]${NC} Could not install SDL2 libs (pygame may still work with prebuilt wheel)"
+else
+    echo "SDL2 libraries already installed"
+fi
+
 # Install dependencies
 echo ""
-echo -e "${GREEN}[6/7]${NC} Installing dependencies..."
+echo -e "${GREEN}[7/8]${NC} Installing dependencies..."
 pip install -r requirements.txt --quiet
 if [ $? -ne 0 ]; then
     echo -e "${RED}[ERROR]${NC} Failed to install dependencies"
@@ -113,7 +124,7 @@ fi
 
 # Setup configuration files
 echo ""
-echo -e "${GREEN}[7/7]${NC} Setting up configuration files..."
+echo -e "${GREEN}[8/8]${NC} Setting up configuration files..."
 if [ ! -f "config/ubuntu_prod.env" ]; then
     echo "Creating config/ubuntu_prod.env from example..."
     cp "config/ubuntu_prod.env.example" "config/ubuntu_prod.env"
