@@ -216,7 +216,7 @@ class Settings:
         self.DEFAULT_TRANSITION_OFFSET = _safe_float("DEFAULT_TRANSITION_OFFSET", 0.5)
 
         # Manual content folder override (when scheduling is disabled)
-        # Example: "vaeveriet_screens_slideshow/sunday_service_slideshow"
+        # Example: "content/sunday_service"
         manual_folder_env = os.getenv("MANUAL_CONTENT_FOLDER", "")
         if manual_folder_env and not self.SCHEDULE_ENABLED:
             self.MANUAL_CONTENT_FOLDER = base_dir / manual_folder_env

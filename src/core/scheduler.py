@@ -155,7 +155,7 @@ class Scheduler:
         default_data = data.get("default_schedule", {})
         default_schedule = Schedule(
             name="Default",
-            folder=base_dir / default_data.get("folder", "vaeveriet_screens_slideshow/default_slideshow"),
+            folder=base_dir / default_data.get("folder", "content/default"),
             transition_type=default_data.get("transition", "Fade"),
             transition_offset=float(default_data.get("transition_offset", 0.5)),
             image_display_time=int(default_data.get("image_display_time", 15)),
@@ -249,7 +249,7 @@ class Scheduler:
         data = {
             "default_schedule": {
                 "folder": str(self.default_schedule.folder.relative_to(self.settings.CONTENT_BASE_DIR))
-                    if self.default_schedule else "vaeveriet_screens_slideshow/default_slideshow",
+                    if self.default_schedule else "content/default",
                 "transition": self.default_schedule.transition_type if self.default_schedule else "Fade",
                 "transition_offset": self.default_schedule.transition_offset if self.default_schedule else 0.5,
                 "image_display_time": 15,

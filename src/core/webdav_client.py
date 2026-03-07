@@ -34,8 +34,9 @@ class WebDAVClient:
         self.remote_file_cache: Dict[str, Dict] = {}
         self._sync_lock = asyncio.Lock()
         # For scheduling: sync to base directory to preserve subfolder structure
-        # This will download /vaeveriet_screens_slideshow/ from WebDAV to local vaeveriet_screens_slideshow/
-        self.local_content_dir = Path(settings.CONTENT_BASE_DIR) / "vaeveriet_screens_slideshow"
+        # Derives local folder name from WEBDAV_ROOT_PATH (e.g., "/my_slides/" -> "my_slides")
+        root_folder = settings.WEBDAV_ROOT_PATH.strip("/").split("/")[0] if settings.WEBDAV_ROOT_PATH.strip("/") else "content"
+        self.local_content_dir = Path(settings.CONTENT_BASE_DIR) / root_folder
         
     async def test_connection(self) -> bool:
         """Test WebDAV connection to Synology NAS."""
@@ -169,7 +170,7 @@ class WebDAVClient:
         Recursively scan a remote directory and collect file information.
 
         Args:
-            remote_path: Full WebDAV path to scan (e.g., "/vaeveriet_screens_slideshow/default_slideshow")
+            remote_path: Full WebDAV path to scan (e.g., "/my_slides/default_slideshow")
             relative_path: Relative path from root (e.g., "default_slideshow")
             file_info: Dictionary to populate with file information
         """

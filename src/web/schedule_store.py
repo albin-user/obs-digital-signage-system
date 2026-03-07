@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEDULES = {
     "default_schedule": {
-        "folder": "vaeveriet_screens_slideshow/default_slideshow",
+        "folder": "content/default",
         "transition": "Fade",
         "transition_offset": 0.5,
         "image_display_time": 15,
