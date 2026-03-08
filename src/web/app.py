@@ -252,6 +252,11 @@ def create_app(
 
     @app.route("/api/folders/<path:subpath>")
     def list_sub_folders(subpath):
+        # Strip WebDAV root prefix — _browse_folders will re-add it
+        settings = refs.get("settings")
+        root_prefix = settings.WEBDAV_ROOT_PATH.strip("/") if settings else ""
+        if root_prefix and subpath.startswith(root_prefix + "/"):
+            subpath = subpath[len(root_prefix) + 1:]
         return jsonify(_browse_folders("/" + subpath))
 
     @app.route("/api/folders/files/<path:subpath>")
@@ -259,6 +264,11 @@ def create_app(
         webdav = refs.get("webdav_client")
         if not webdav:
             return jsonify({"files": []})
+        # Strip WebDAV root prefix — StoreboxBrowser expects NAS-relative paths
+        settings = refs.get("settings")
+        root_prefix = settings.WEBDAV_ROOT_PATH.strip("/") if settings else ""
+        if root_prefix and subpath.startswith(root_prefix + "/"):
+            subpath = subpath[len(root_prefix) + 1:]
         browser = StoreboxBrowser(webdav)
         files = browser.list_files("/" + subpath)
         return jsonify({"files": files})
@@ -268,7 +278,15 @@ def create_app(
         if not webdav:
             return []
         browser = StoreboxBrowser(webdav)
-        return browser.list_folders(path)
+        folders = browser.list_folders(path)
+        # Prefix paths so they match local download structure
+        # (schedules.json needs CONTENT_BASE_DIR-relative paths)
+        settings = refs.get("settings")
+        root_prefix = settings.WEBDAV_ROOT_PATH.strip("/") if settings else ""
+        if root_prefix:
+            for f in folders:
+                f["path"] = f"{root_prefix}/{f['path']}"
+        return folders
 
     def _notify_scheduler_reload():
         scheduler = refs.get("scheduler")

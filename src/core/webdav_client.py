@@ -33,9 +33,10 @@ class WebDAVClient:
         self.last_sync_time = 0.0
         self.remote_file_cache: Dict[str, Dict] = {}
         self._sync_lock = asyncio.Lock()
-        # For scheduling: sync to base directory to preserve subfolder structure
-        # Derives local folder name from WEBDAV_ROOT_PATH (e.g., "/my_slides/" -> "my_slides")
-        root_folder = settings.WEBDAV_ROOT_PATH.strip("/").split("/")[0] if settings.WEBDAV_ROOT_PATH.strip("/") else "content"
+        # Map the full WEBDAV_ROOT_PATH to a local directory so the folder
+        # structure matches what the scheduler expects in schedules.json.
+        # e.g. "/storebox/slides/" -> CONTENT_BASE_DIR/storebox/slides/
+        root_folder = settings.WEBDAV_ROOT_PATH.strip("/") or "content"
         self.local_content_dir = Path(settings.CONTENT_BASE_DIR) / root_folder
         
     async def test_connection(self) -> bool:

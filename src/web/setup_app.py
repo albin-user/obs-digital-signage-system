@@ -266,9 +266,9 @@ def _write_initial_schedules(config_dir: Path, webdav_root_path: str, default_fo
         return  # Don't overwrite existing schedules
 
     # Build the folder path the content manager will use.
-    # WebDAV syncs into <root_folder_name>/ locally, and the schedule folder
-    # is relative to that, e.g. "default_slideshow" inside the root.
-    root_name = webdav_root_path.strip("/").split("/")[0] if webdav_root_path.strip("/") else ""
+    # WebDAV syncs into the full WEBDAV_ROOT_PATH locally, and the schedule
+    # folder is relative to CONTENT_BASE_DIR.
+    root_name = webdav_root_path.strip("/") if webdav_root_path.strip("/") else ""
     if default_folder:
         # default_folder is the subfolder name from the NAS
         folder = f"{root_name}/{default_folder}" if root_name else default_folder
