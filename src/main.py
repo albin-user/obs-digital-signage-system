@@ -371,8 +371,11 @@ class DigitalSignageSystem:
                     # Set new transition in OBS
                     await self.obs_manager.set_transition(new_transition)
 
-                    # Switch content folder
+                    # Switch content folder (updates content_manager.content_folder)
                     await self.content_manager.switch_content_folder(new_folder, new_offset)
+
+                    # Update settings so audio_manager scans the new folder
+                    self.settings.CONTENT_DIR = new_folder
 
                     # Apply audio volume for new schedule
                     new_volume = self.scheduler.get_current_audio_volume()
