@@ -101,6 +101,7 @@ class Scheduler:
         self.schedules: List[Schedule] = []
         self.default_schedule: Optional[Schedule] = None
         self.current_schedule: Optional[Schedule] = None
+        self._switch_needed = False
 
         self._json_path = Path(settings.CONFIG_DIR) / "schedules.json"
         self._load_schedules()
@@ -319,6 +320,7 @@ class Scheduler:
             if new_active != self.current_schedule:
                 self.logger.info(f"Active schedule changed after reload: {new_active.name}")
                 self.current_schedule = new_active
+                self._switch_needed = True
 
     def _parse_time(self, time_str: str) -> Optional[time]:
         """Parse time string in HH:MM format."""
@@ -362,7 +364,8 @@ class Scheduler:
         """Check if the active schedule has changed since last check."""
         new_schedule = self.get_active_schedule()
         with self._lock:
-            if new_schedule != self.current_schedule:
+            if self._switch_needed or new_schedule != self.current_schedule:
+                self._switch_needed = False
                 old_name = self.current_schedule.name if self.current_schedule else "None"
                 self.logger.info(f"Schedule changed: {old_name} -> {new_schedule.name}")
                 self.current_schedule = new_schedule
