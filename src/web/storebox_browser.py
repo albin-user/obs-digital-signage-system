@@ -58,6 +58,38 @@ class StoreboxBrowser:
             logger.warning(f"Failed to list folders at {path}: {e}")
             return []
 
+    def create_folder(self, parent_path: str, name: str) -> None:
+        """Create a new folder on the NAS.
+
+        Args:
+            parent_path: Parent folder path (e.g., "/" or "/my_root")
+            name: New folder name (no slashes)
+
+        Raises:
+            ValueError: If name or path is invalid
+            Exception: If mkdir fails
+        """
+        # Validate name
+        if not name or "/" in name or "\\" in name or ".." in name:
+            raise ValueError("Invalid folder name")
+        if "\x00" in name or any(ord(c) < 32 for c in name):
+            raise ValueError("Folder name contains invalid characters")
+
+        # Sanitize parent path
+        if "\x00" in parent_path or any(ord(c) < 32 for c in parent_path):
+            raise ValueError("Invalid parent path")
+        clean = posixpath.normpath(parent_path)
+        if ".." in clean.split("/"):
+            raise ValueError("Invalid parent path")
+        if not clean.startswith("/"):
+            clean = "/" + clean
+
+        root = self.client.settings.WEBDAV_ROOT_PATH.rstrip("/")
+        full_path = f"{root}{clean}/{name}".replace("//", "/")
+
+        logger.info(f"Creating folder on NAS: {full_path}")
+        self.client.client.mkdir(full_path)
+
     def list_files(self, path: str = "/") -> list[dict]:
         """List media files at the given WebDAV path.
 

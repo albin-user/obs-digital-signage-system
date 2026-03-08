@@ -123,9 +123,12 @@
 
                 <div class="form-group">
                     <label>Folder</label>
-                    <select id="f-folder">
-                        <option value="">-- Select folder --</option>
-                    </select>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <select id="f-folder" style="flex:1;">
+                            <option value="">-- Select folder --</option>
+                        </select>
+                        <button type="button" class="btn btn-small" id="btn-new-folder">+ New folder</button>
+                    </div>
                     <input type="text" id="f-folder-manual" placeholder="Or type folder path manually" style="margin-top:4px">
                     <small class="form-hint">Choose which NAS folder's images and videos to display</small>
                     <div id="folder-preview" class="folder-preview" style="display:none"></div>

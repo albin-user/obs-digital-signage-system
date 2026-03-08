@@ -5,6 +5,9 @@ const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 // In-memory schedule cache for event delegation lookups
 let _schedules = [];
 
+// Active schedule name from status polling
+let _activeScheduleName = "";
+
 // -- Toast notifications --
 
 function showToast(message, type) {
@@ -61,6 +64,14 @@ function refreshStatus() {
             document.getElementById("uptime-status").textContent = data.uptime || "--";
             var countEl = document.getElementById("media-count");
             if (countEl) countEl.textContent = data.media_count != null ? data.media_count : "--";
+
+            // Track active schedule and re-render if it changed
+            var newActive = data.active_schedule || "";
+            if (newActive !== _activeScheduleName) {
+                _activeScheduleName = newActive;
+                renderScheduleList(_schedules);
+                renderDefaultBadge();
+            }
         })
         .catch(() => {
             document.getElementById("obs-status").textContent = "Error";
@@ -92,15 +103,20 @@ function renderScheduleList(schedules) {
         const typeInfo = s.type === "recurring"
             ? `Recurring: Every ${DAYS[s.day_of_week] || "?"}`
             : `One-time: ${s.date || "?"}`;
-        const badge = s.enabled
-            ? '<span class="badge badge-enabled">enabled</span>'
-            : '<span class="badge badge-disabled">disabled</span>';
+        const isLive = s.name === _activeScheduleName;
+        const liveBadge = isLive ? '<span class="badge badge-live">LIVE</span>' : '';
+        const toggleChecked = s.enabled ? "checked" : "";
+        const toggleText = s.enabled ? "Enabled" : "Disabled";
         const folder = s.folder || "--";
         return `
         <div class="schedule-card">
             <div class="card-header">
-                <h3>${esc(s.name)}</h3>
-                ${badge}
+                <h3>${esc(s.name)} ${liveBadge}</h3>
+                <label class="card-toggle">
+                    <input type="checkbox" ${toggleChecked} data-action="toggle" data-id="${esc(s.id)}">
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    ${toggleText}
+                </label>
             </div>
             <div class="card-details">
                 <span>${typeInfo}</span>
@@ -126,6 +142,23 @@ function renderDefault(def) {
         <span>Images: ${def.image_display_time || 15}s each</span>
         <span>Volume: ${def.audio_volume || 80}%</span>
     `;
+    renderDefaultBadge();
+}
+
+function renderDefaultBadge() {
+    var header = document.querySelector("#default-schedule .card-header");
+    if (!header) return;
+    // Remove existing live badge if any
+    var existing = header.querySelector(".badge-live");
+    if (existing) existing.remove();
+    // Add LIVE badge if default is the active schedule
+    if (_activeScheduleName === "Default" || _activeScheduleName === "default") {
+        var badge = document.createElement("span");
+        badge.className = "badge badge-live";
+        badge.textContent = "LIVE";
+        header.querySelector("h3").appendChild(document.createTextNode(" "));
+        header.querySelector("h3").appendChild(badge);
+    }
 }
 
 // -- Conflict checking --
@@ -177,6 +210,7 @@ function openModal(schedule) {
 
     document.getElementById("advanced-settings").removeAttribute("open");
     document.getElementById("folder-preview").style.display = "none";
+    hideNewFolderInput();
     toggleType();
     updateVolumeDisplay();
     document.getElementById("modal-overlay").style.display = "flex";
@@ -209,6 +243,7 @@ function editDefault() {
 
             document.getElementById("advanced-settings").setAttribute("open", "");
             document.getElementById("folder-preview").style.display = "none";
+            hideNewFolderInput();
             updateVolumeDisplay();
             document.getElementById("modal-overlay").style.display = "flex";
             loadFolders();
@@ -221,6 +256,7 @@ function closeModal() {
     document.getElementById("modal-overlay").style.display = "none";
     document.getElementById("f-name").disabled = false;
     document.getElementById("folder-preview").style.display = "none";
+    hideNewFolderInput();
     editingDefault = false;
 
     // Restore hidden fields
@@ -286,6 +322,116 @@ function getFolderValue() {
     const manual = document.getElementById("f-folder-manual").value.trim();
     if (manual) return manual;
     return document.getElementById("f-folder").value;
+}
+
+// -- New folder creation --
+
+function showNewFolderInput() {
+    var container = document.getElementById("new-folder-container");
+    if (container) {
+        container.style.display = "flex";
+        var input = container.querySelector("input[type='text']");
+        if (input) { input.value = ""; input.focus(); }
+        return;
+    }
+    // Build the row dynamically
+    var folderGroup = document.getElementById("f-folder").closest(".form-group");
+    container = document.createElement("div");
+    container.id = "new-folder-container";
+    container.className = "new-folder-row";
+    container.innerHTML =
+        '<input type="text" placeholder="Folder name" id="new-folder-name">' +
+        '<button type="button" class="btn btn-primary" id="btn-create-folder">Create</button>' +
+        '<button type="button" class="btn" id="btn-cancel-folder">Cancel</button>';
+    // Insert after the folder select
+    var preview = document.getElementById("folder-preview");
+    folderGroup.insertBefore(container, preview);
+
+    document.getElementById("btn-create-folder").addEventListener("click", createFolder);
+    document.getElementById("btn-cancel-folder").addEventListener("click", hideNewFolderInput);
+    document.getElementById("new-folder-name").focus();
+}
+
+function hideNewFolderInput() {
+    var container = document.getElementById("new-folder-container");
+    if (container) container.style.display = "none";
+}
+
+function createFolder() {
+    var nameInput = document.getElementById("new-folder-name");
+    var name = (nameInput.value || "").trim();
+    if (!name) {
+        showToast("Enter a folder name", "error");
+        nameInput.focus();
+        return;
+    }
+
+    var btn = document.getElementById("btn-create-folder");
+    setLoading(btn, true);
+
+    // Parent is currently "/" (root relative to WEBDAV_ROOT_PATH)
+    fetch("/api/folders", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ path: "/", name: name }),
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || "Create failed"); });
+        return r.json();
+    })
+    .then(function() {
+        showToast("Folder created: " + name);
+        hideNewFolderInput();
+        // Reload folders and auto-select the new one
+        var sel = document.getElementById("f-folder");
+        sel.innerHTML = '<option value="">Loading folders\u2026</option>';
+        fetch("/api/folders")
+            .then(function(r) { return r.json(); })
+            .then(function(folders) {
+                sel.innerHTML = '<option value="">-- Select folder --</option>';
+                folders.forEach(function(f) {
+                    var opt = document.createElement("option");
+                    opt.value = f.path;
+                    opt.textContent = f.path;
+                    sel.appendChild(opt);
+                });
+                // Auto-select the newly created folder
+                sel.value = name;
+                previewFolder(name);
+            });
+    })
+    .catch(function(err) {
+        showToast("Failed to create folder: " + err.message, "error");
+    })
+    .finally(function() {
+        setLoading(btn, false);
+    });
+}
+
+// -- Toggle schedule enabled/disabled --
+
+function toggleSchedule(id, checkbox) {
+    fetch("/api/schedules/" + id + "/toggle", { method: "PATCH" })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || "Toggle failed"); });
+            return r.json();
+        })
+        .then(function(updated) {
+            // Update the cached schedule
+            for (var i = 0; i < _schedules.length; i++) {
+                if (_schedules[i].id === id) {
+                    _schedules[i].enabled = updated.enabled;
+                    break;
+                }
+            }
+            renderScheduleList(_schedules);
+            showToast(updated.name + " " + (updated.enabled ? "enabled" : "disabled"));
+        })
+        .catch(function(err) {
+            // Revert checkbox on error
+            checkbox.checked = !checkbox.checked;
+            showToast(err.message, "error");
+        });
 }
 
 // -- CRUD operations --
@@ -472,6 +618,7 @@ document.getElementById("f-volume").addEventListener("input", updateVolumeDispla
 // Header buttons
 document.getElementById("btn-add").addEventListener("click", function() { openModal(); });
 document.getElementById("btn-edit-default").addEventListener("click", editDefault);
+document.getElementById("btn-new-folder").addEventListener("click", showNewFolderInput);
 
 // Sync Now button
 document.getElementById("btn-sync").addEventListener("click", function() {
@@ -516,8 +663,15 @@ document.getElementById("f-folder-manual").addEventListener("blur", function() {
     previewFolder(this.value.trim());
 });
 
-// Event delegation for schedule card buttons (avoids inline onclick with user data)
+// Event delegation for schedule card buttons and toggles
 document.getElementById("schedule-list").addEventListener("click", function(e) {
+    // Handle toggle switches
+    var toggle = e.target.closest("[data-action='toggle']");
+    if (toggle) {
+        e.stopPropagation();
+        toggleSchedule(toggle.getAttribute("data-id"), toggle);
+        return;
+    }
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
     const action = btn.getAttribute("data-action");

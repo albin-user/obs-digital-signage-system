@@ -198,11 +198,21 @@ class DigitalSignageSystem:
                 self.logger.info("Performing initial WebDAV synchronization...")
                 await self.webdav_client.sync_content()
             
+            # Log path diagnostic: compare where WebDAV syncs vs where content manager reads
+            if self.webdav_client:
+                webdav_dir = str(self.webdav_client.local_content_dir)
+                content_dir = str(self.settings.CONTENT_DIR)
+                self.logger.info(f"WebDAV sync target:  {webdav_dir}")
+                self.logger.info(f"Content scan folder: {content_dir}")
+                if not content_dir.startswith(webdav_dir) and not webdav_dir.startswith(content_dir):
+                    self.logger.warning(
+                        "PATH MISMATCH: WebDAV syncs to a different folder than the content manager scans. "
+                        "Content will not appear in OBS. Check WEBDAV_ROOT_PATH and schedules.json default folder."
+                    )
+
             # Scan local content and setup OBS scenes
             self.logger.info("Scanning local content...")
             await self.content_manager.scan_and_update_content()
-
-
 
             # Initialize background audio
             self.logger.info("Setting up background audio...")

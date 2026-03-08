@@ -134,60 +134,144 @@ class ContentManager:
                 self.logger.debug("No content changes detected")
                 return
 
-            # Content has changed - update everything
+            # Content has changed
             self.content_hash = new_content_hash
-            
-            # 1. Create Sync in Progress scene
-            sync_scene = "Sync in Progress"
-            await self.obs_manager.create_scene(sync_scene)
+
+            if not new_media_files:
+                # No content — clean up everything and show waiting scene
+                await self._cleanup_all_digital_signage_content()
+                async with self._rotation_lock:
+                    self.media_files = []
+                    self.rotation_active = False
+                self.logger.warning("No valid media files found")
+                await self._create_waiting_scene()
+                await self._activate_waiting_scene()
+                return
+
+            # Sort files alphabetically
+            new_media_files.sort(key=lambda x: x.filename.lower())
+
+            # Calculate durations BEFORE creating OBS scenes
+            await self._calculate_media_durations(new_media_files)
+
+            # Determine if this is first load or incremental update
+            is_first_load = not self.media_files
+
+            if is_first_load:
+                # First load or after folder switch — full rebuild with sync scene
+                await self._full_rebuild(new_media_files)
+            else:
+                # Incremental update — seamless, no visual disruption
+                old_names = {mf.filename for mf in self.media_files}
+                new_names = {mf.filename for mf in new_media_files}
+                added = new_names - old_names
+                removed = old_names - new_names
+                await self._incremental_update(new_media_files, added, removed)
+
+        except Exception as e:
+            self.logger.error(f"Content scan and update failed: {e}")
+
+    async def _full_rebuild(self, new_media_files: list) -> None:
+        """Full scene teardown and rebuild. Shows 'Sync in Progress' briefly."""
+        sync_scene = "Sync in Progress"
+        sync_scene_created = await self.obs_manager.create_scene(sync_scene)
+        if not sync_scene_created:
+            self.logger.warning(f"Could not create '{sync_scene}' — proceeding without it")
+        else:
             await self.obs_manager.set_current_scene(sync_scene)
             self.logger.info(f"Created and switched to '{sync_scene}'")
 
-            try:
-                # 2. Cleanup ALL other scenes (except Sync in Progress)
-                await self._cleanup_all_digital_signage_content(exclude_scenes={sync_scene})
+        try:
+            await self._cleanup_all_digital_signage_content(exclude_scenes={sync_scene})
 
-                if not new_media_files:
-                    async with self._rotation_lock:
-                        self.media_files = []
-                        self.rotation_active = False
-                    self.logger.warning("No valid media files found")
-                    await self._activate_waiting_scene()
-                    return
+            async with self._rotation_lock:
+                self.media_files = new_media_files
 
-                # Sort files alphabetically
-                new_media_files.sort(key=lambda x: x.filename.lower())
+            await self._create_scenes_for_media()
+            await self._create_waiting_scene()  # Always maintain placeholder
+            await self._cleanup_orphaned_scenes(exclude_scenes={sync_scene})
 
-                # IMPORTANT: Calculate durations BEFORE creating OBS scenes
-                await self._calculate_media_durations(new_media_files)
+            async with self._rotation_lock:
+                self.current_index = 0
+                self.rotation_active = True
+                self.playback_start_time = time.time()
 
-                # Now create OBS scenes with known durations
-                async with self._rotation_lock:
-                    self.media_files = new_media_files
+            if new_media_files:
+                await self._switch_to_media(0)
 
-                await self._create_scenes_for_media()
+            self.logger.info(f"Content rebuilt: {len(self.media_files)} media files")
 
-                # Clean up any orphaned scenes
-                await self._cleanup_orphaned_scenes(exclude_scenes={sync_scene})
-
-                # Reset rotation state under lock, then switch scene outside lock
-                async with self._rotation_lock:
-                    self.current_index = 0
-                    self.rotation_active = True
-                    self.playback_start_time = time.time()
-
-                # Start with first piece of content
-                if new_media_files:
-                    await self._switch_to_media(0)
-
-                self.logger.info(f"Content updated: {len(self.media_files)} media files")
-
-            finally:
-                # Always remove Sync in Progress scene, even on error
+        finally:
+            if sync_scene_created:
                 await self.obs_manager.remove_scene(sync_scene)
-            
-        except Exception as e:
-            self.logger.error(f"Content scan and update failed: {e}")
+
+    async def _incremental_update(self, new_media_files: list, added: set, removed: set) -> None:
+        """Add/remove scenes incrementally without disrupting playback."""
+        # Phase 1: Create scenes for NEW files (while old content keeps playing)
+        new_file_map = {mf.filename: mf for mf in new_media_files}
+        for filename in added:
+            media_file = new_file_map[filename]
+            try:
+                if await self._create_scene_for_media(media_file):
+                    self.logger.info(f"Added new scene: {filename}")
+                else:
+                    self.logger.error(f"Failed to create scene for {filename}")
+            except Exception as e:
+                self.logger.error(f"Failed to add scene for {filename}: {e}")
+
+        # Phase 2: Update media_files list and rotation state
+        need_switch = False
+        async with self._rotation_lock:
+            currently_playing = None
+            if self.media_files and 0 <= self.current_index < len(self.media_files):
+                currently_playing = self.media_files[self.current_index].filename
+            self.media_files = new_media_files
+            # Preserve current playback position if the currently-playing file still exists
+            if currently_playing:
+                if currently_playing in removed:
+                    # Currently-playing file was removed — reset to start
+                    self.current_index = 0
+                    self.playback_start_time = time.time()
+                    need_switch = True
+                else:
+                    for i, mf in enumerate(self.media_files):
+                        if mf.filename == currently_playing:
+                            self.current_index = i
+                            break
+                    else:
+                        # File not found (shouldn't happen) — reset
+                        self.current_index = 0
+                        self.playback_start_time = time.time()
+                        need_switch = True
+            if not self.rotation_active and self.media_files:
+                self.rotation_active = True
+                self.playback_start_time = time.time()
+                need_switch = True
+
+        # Switch if needed (updates self.current_scene)
+        if need_switch and self.media_files:
+            await self._switch_to_media(0)
+
+        # Phase 3: Remove scenes for DELETED files (safe now — we've switched away)
+        # Guard with managed set membership — on_file_deleted() may have already cleaned up
+        for filename in removed:
+            scene_name = MediaFile._sanitize_obs_name(f"{filename}_scene")
+            source_name = MediaFile._sanitize_obs_name(f"{filename}_source")
+            if source_name in self.managed_inputs:
+                await self.obs_manager.remove_input(source_name)
+                self.managed_inputs.discard(source_name)
+            if scene_name in self.managed_scenes:
+                await self.obs_manager.remove_scene(scene_name)
+                self.managed_scenes.discard(scene_name)
+            self.logger.info(f"Removed scene: {filename}")
+
+        # Ensure waiting scene exists as safety net
+        await self._create_waiting_scene()
+
+        self.logger.info(
+            f"Content updated seamlessly: +{len(added)} -{len(removed)} "
+            f"= {len(self.media_files)} total"
+        )
     
     def _check_ffprobe(self) -> None:
         """Check that FFprobe is installed and accessible."""
@@ -407,11 +491,15 @@ class ContentManager:
         self.managed_scenes.clear()
         self.managed_inputs.clear()
 
+        success_count = 0
         for media_file in self.media_files:
             try:
-                await self._create_scene_for_media(media_file)
+                if await self._create_scene_for_media(media_file):
+                    success_count += 1
             except Exception as e:
                 self.logger.error(f"Failed to create scene for {media_file.filename}: {e}")
+
+        self.logger.info(f"Created {success_count}/{len(self.media_files)} scenes successfully")
     
     def _get_input_config(self, media_file: MediaFile) -> tuple[Optional[str], Optional[Dict]]:
         """
@@ -444,22 +532,24 @@ class ContentManager:
             self.logger.error(f"Unsupported media type: {media_file.filename}")
             return None, None
 
-    async def _create_scene_for_media(self, media_file: MediaFile) -> None:
-        """Create OBS scene and source for a media file."""
+    async def _create_scene_for_media(self, media_file: MediaFile) -> bool:
+        """Create OBS scene and source for a media file. Returns True on success."""
         try:
             scene_name = media_file.get_scene_name()
             source_name = media_file.get_source_name()
 
-            # Create scene
-            await self.obs_manager.create_scene(scene_name)
+            # Create scene — check return value
+            if not await self.obs_manager.create_scene(scene_name):
+                self.logger.error(f"Failed to create OBS scene for {media_file.filename}")
+                return False
             self.managed_scenes.add(scene_name)
-
 
             # Determine source type and settings
             input_kind, input_settings = self._get_input_config(media_file)
-            
+
             if not input_kind:
-                return
+                self.logger.warning(f"Skipping {media_file.filename}: unsupported media type")
+                return False
 
             # Create input and add to scene
             success = await self.obs_manager.create_input(
@@ -468,36 +558,35 @@ class ContentManager:
                 input_kind=input_kind,
                 input_settings=input_settings
             )
-            
+
             # If creation failed (source already exists), try adding existing source to scene
             if not success:
                 self.logger.info(f"Source '{source_name}' already exists - checking if it's in scene '{scene_name}'")
-                
+
                 # Check if source is ALREADY in the scene to avoid duplicates
                 existing_items = await self.obs_manager.get_scene_items(scene_name)
-                
+
                 if existing_items is None:
                     self.logger.warning(f"Could not check duplicates for {scene_name} (request failed)")
                     existing_items = []
-                
+
                 source_already_in_scene = False
-                
+
                 for item in existing_items:
                     # Handle both dict and object access for robustness
                     item_source_name = item.get('sourceName') if isinstance(item, dict) else getattr(item, 'source_name', None)
                     if item_source_name == source_name:
                         source_already_in_scene = True
                         break
-                
+
                 if source_already_in_scene:
                     self.logger.info(f"Source {source_name} already in scene {scene_name} - skipping addition")
                 else:
                     scene_item_id = await self.obs_manager.add_source_to_scene(scene_name, source_name)
                     if not scene_item_id:
                         self.logger.error(f"Failed to recover source {source_name} for scene {scene_name}")
-                        return
+                        return False
 
-            
             self.managed_inputs.add(source_name)
 
             # Mute video audio if it's a video file
@@ -508,9 +597,11 @@ class ContentManager:
             await self._configure_scene_item_transform(media_file)
 
             self.logger.debug(f"Created scene and source for: {media_file.filename}")
+            return True
 
         except Exception as e:
             self.logger.error(f"Failed to create scene for {media_file.filename}: {e}")
+            return False
     
     async def _configure_scene_item_transform(self, media_file: MediaFile) -> None:
         """Configure scene item to fit 1920x1080 canvas."""
@@ -810,10 +901,15 @@ class ContentManager:
             self.content_folder = new_folder
             self.transition_offset = transition_offset
 
+            # Force full rebuild — different folder means entirely different content
+            self.content_hash = None
+            async with self._rotation_lock:
+                self.media_files = []  # Clear so is_first_load triggers full rebuild
+
             # Create folder if it doesn't exist
             new_folder.mkdir(parents=True, exist_ok=True)
 
-            # Rescan and update content
+            # Rescan and update content (will do a full rebuild)
             await self.scan_and_update_content()
 
             self.logger.info(f"Content folder switched successfully to: {new_folder.name}")
@@ -855,6 +951,12 @@ class ContentManager:
             scene_name = MediaFile._sanitize_obs_name(f"{basename}_scene")
             source_name = MediaFile._sanitize_obs_name(f"{basename}_source")
 
+            # B3: Ensure waiting scene exists before removing what might be the last content scene
+            all_scenes = await self.obs_manager.get_scene_list()
+            content_scene_count = sum(1 for s in all_scenes if s.endswith('_scene'))
+            if content_scene_count <= 1:
+                await self._create_waiting_scene()
+
             # Remove the scene from OBS
             if scene_name in self.managed_scenes:
                 await self.obs_manager.remove_scene(scene_name)
@@ -869,15 +971,23 @@ class ContentManager:
 
             # Update media files and rotation state under lock
             need_switch = False
+            files_empty = False
             async with self._rotation_lock:
                 self.media_files = [mf for mf in self.media_files if mf.filename != basename]
-                if self.current_scene == scene_name and self.media_files:
+                if not self.media_files:
+                    files_empty = True
+                    self.rotation_active = False
+                elif self.current_scene == scene_name:
                     self.current_index = 0
                     self.playback_start_time = time.time()
                     need_switch = True
 
-            # Switch scene outside the lock (involves OBS WebSocket call)
-            if need_switch:
+            # B2: If all files deleted, show waiting scene
+            if files_empty:
+                self.logger.info("All content files deleted — activating waiting scene")
+                await self._create_waiting_scene()
+                await self._activate_waiting_scene()
+            elif need_switch:
                 await self._switch_to_media(0)
 
         except Exception as e:

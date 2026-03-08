@@ -61,6 +61,24 @@
                 <button type="button" class="btn btn-small" id="btn-test-webdav">Test Connection</button>
                 <span class="test-result" id="result-webdav"></span>
             </div>
+
+            <!-- Folder browser (shown after successful WebDAV test) -->
+            <div id="webdav-folders" style="display:none; margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+                <div class="form-group">
+                    <label for="webdav-root-path">Content Root Folder</label>
+                    <select id="webdav-root-path" name="webdav_root_path">
+                        <option value="/">/ (root)</option>
+                    </select>
+                    <small class="form-hint">The top-level folder on your NAS that contains all content subfolders</small>
+                </div>
+                <div class="form-group">
+                    <label for="webdav-default-folder">Default Content Subfolder</label>
+                    <select id="webdav-default-folder" name="default_folder">
+                        <option value="">-- Select subfolder --</option>
+                    </select>
+                    <small class="form-hint">Which subfolder to display by default (when no schedule is active)</small>
+                </div>
+            </div>
         </div>
 
         <!-- Section 3: Timezone -->

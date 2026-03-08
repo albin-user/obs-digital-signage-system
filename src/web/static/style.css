@@ -142,6 +142,15 @@ header .subtitle {
 .badge-enabled { background: var(--green); color: #fff; }
 .badge-disabled { background: var(--text-muted); color: #fff; }
 .badge-default { background: var(--surface-alt); color: var(--text-muted); }
+.badge-live {
+    background: #e53935;
+    color: #fff;
+    animation: pulse-live 2s ease-in-out infinite;
+}
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
 
 /* Buttons */
 .btn {
@@ -542,6 +551,54 @@ input:focus, select:focus {
     font-size: 3rem;
     color: var(--green);
     margin-bottom: 12px;
+}
+
+/* Card-context toggle switch (smaller than modal toggle) */
+.card-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.card-toggle input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.card-toggle .toggle-track {
+    width: 34px;
+    height: 18px;
+    border-radius: 9px;
+}
+.card-toggle .toggle-thumb {
+    width: 14px;
+    height: 14px;
+    top: 2px;
+    left: 2px;
+}
+.card-toggle input:checked + .toggle-track .toggle-thumb {
+    transform: translateX(16px);
+}
+
+/* New folder inline input */
+.new-folder-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    align-items: center;
+}
+.new-folder-row input[type="text"] {
+    flex: 1;
+    padding: 5px 8px;
+    font-size: 0.85rem;
+}
+.new-folder-row .btn {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    white-space: nowrap;
 }
 
 /* Responsive */

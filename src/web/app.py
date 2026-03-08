@@ -137,6 +137,16 @@ def create_app(
         _notify_scheduler_reload()
         return jsonify(result)
 
+    @app.route("/api/schedules/<schedule_id>/toggle", methods=["PATCH"])
+    def toggle_schedule(schedule_id):
+        existing = store.get_schedule(schedule_id)
+        if existing is None:
+            return jsonify({"error": "Schedule not found"}), 404
+        new_enabled = not existing.get("enabled", True)
+        result = store.update_schedule(schedule_id, {"enabled": new_enabled})
+        _notify_scheduler_reload()
+        return jsonify(result)
+
     @app.route("/api/schedules/<schedule_id>", methods=["DELETE"])
     def delete_schedule(schedule_id):
         if store.delete_schedule(schedule_id):
@@ -210,9 +220,35 @@ def create_app(
 
     # -- Folder browser --
 
-    @app.route("/api/folders")
+    @app.route("/api/folders", methods=["GET"])
     def list_root_folders():
         return jsonify(_browse_folders("/"))
+
+    @app.route("/api/folders", methods=["POST"])
+    def create_folder():
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        parent = data.get("path", "/")
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Folder name is required"}), 400
+        # Validate name: no slashes, no traversal, no control chars
+        if "/" in name or "\\" in name or ".." in name:
+            return jsonify({"error": "Folder name must not contain slashes or '..'"}), 400
+        if "\x00" in name or any(ord(c) < 32 for c in name):
+            return jsonify({"error": "Folder name contains invalid characters"}), 400
+
+        webdav = refs.get("webdav_client")
+        if not webdav:
+            return jsonify({"error": "WebDAV client not available"}), 503
+        browser = StoreboxBrowser(webdav)
+        try:
+            browser.create_folder(parent, name)
+            return jsonify({"ok": True}), 201
+        except Exception as e:
+            logger.error(f"Failed to create folder: {e}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/folders/<path:subpath>")
     def list_sub_folders(subpath):

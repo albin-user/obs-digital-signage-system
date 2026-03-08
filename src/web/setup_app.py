@@ -3,6 +3,7 @@ First-run setup wizard — lightweight Flask app that collects initial
 configuration and writes the .env file so the main system can start.
 """
 
+import json
 import logging
 import os
 import threading
@@ -35,7 +36,7 @@ WEBDAV_USERNAME={webdav_username}
 WEBDAV_PASSWORD={webdav_password}
 WEBDAV_TIMEOUT=30
 WEBDAV_SYNC_INTERVAL=30
-WEBDAV_ROOT_PATH=/
+WEBDAV_ROOT_PATH={webdav_root_path}
 
 # Media Settings
 VIDEO_WIDTH=1920
@@ -71,6 +72,7 @@ _WIZARD_FIELDS = {
     "webdav_host": "WEBDAV_HOST",
     "webdav_username": "WEBDAV_USERNAME",
     "webdav_password": "WEBDAV_PASSWORD",
+    "webdav_root_path": "WEBDAV_ROOT_PATH",
     "timezone": "TIMEZONE",
 }
 
@@ -149,6 +151,46 @@ def create_setup_app() -> Flask:
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)})
 
+    @app.route("/api/setup/browse-folders", methods=["POST"])
+    def browse_folders():
+        """Browse folders on NAS using ad-hoc WebDAV credentials (setup only)."""
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"ok": False, "error": "No data provided"}), 400
+
+        host = (data.get("host") or "").strip()
+        username = data.get("username", "")
+        password = data.get("password", "")
+        path = data.get("path", "/")
+
+        if not host:
+            return jsonify({"ok": False, "error": "WebDAV host is required"})
+
+        # Sanitize path
+        if "\x00" in path or any(ord(c) < 32 for c in path):
+            return jsonify({"ok": False, "error": "Invalid path"})
+        import posixpath
+        clean = posixpath.normpath(path)
+        if ".." in clean.split("/"):
+            return jsonify({"ok": False, "error": "Invalid path"})
+        if not clean.startswith("/"):
+            clean = "/" + clean
+
+        try:
+            from webdav4.client import Client
+            client = Client(host, auth=(username, password), timeout=10)
+            items = client.ls(clean)
+            folders = []
+            for item in items:
+                if item.get("type") == "directory":
+                    name = item.get("name", "").rstrip("/").split("/")[-1]
+                    if name and name != ".":
+                        rel = f"{clean.rstrip('/')}/{name}"
+                        folders.append({"name": name, "path": rel})
+            return jsonify({"ok": True, "folders": folders})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)})
+
     @app.route("/api/setup/save", methods=["POST"])
     def save_config():
         data = request.get_json(silent=True)
@@ -181,6 +223,8 @@ def create_setup_app() -> Flask:
 
         webdav_host = (data.get("webdav_host") or "").strip()
         webdav_username = (data.get("webdav_username") or "").strip()
+        webdav_root_path = (data.get("webdav_root_path") or "/").strip()
+        default_folder = (data.get("default_folder") or "").strip()
 
         project_root = str(Path(__file__).parent.parent.parent)
 
@@ -189,6 +233,7 @@ def create_setup_app() -> Flask:
             "WEBDAV_HOST": webdav_host,
             "WEBDAV_USERNAME": webdav_username,
             "WEBDAV_PASSWORD": webdav_password,
+            "WEBDAV_ROOT_PATH": webdav_root_path,
             "TIMEZONE": timezone,
             "CONTENT_BASE_DIR": project_root,
         }
@@ -202,6 +247,9 @@ def create_setup_app() -> Flask:
             tmp_path.write_text(config_content)
             os.replace(str(tmp_path), str(env_path))
 
+            # Write schedules.json with default folder matching WebDAV structure
+            _write_initial_schedules(env_path.parent, webdav_root_path, default_folder)
+
             app.config["SETUP_COMPLETE"] = True
             return jsonify({"ok": True})
 
@@ -209,6 +257,42 @@ def create_setup_app() -> Flask:
             return jsonify({"error": f"Failed to write config: {e}"}), 500
 
     return app
+
+
+def _write_initial_schedules(config_dir: Path, webdav_root_path: str, default_folder: str) -> None:
+    """Write initial schedules.json so the default folder matches WebDAV layout."""
+    schedules_path = config_dir / "schedules.json"
+    if schedules_path.exists():
+        return  # Don't overwrite existing schedules
+
+    # Build the folder path the content manager will use.
+    # WebDAV syncs into <root_folder_name>/ locally, and the schedule folder
+    # is relative to that, e.g. "default_slideshow" inside the root.
+    root_name = webdav_root_path.strip("/").split("/")[0] if webdav_root_path.strip("/") else ""
+    if default_folder:
+        # default_folder is the subfolder name from the NAS
+        folder = f"{root_name}/{default_folder}" if root_name else default_folder
+    elif root_name:
+        folder = root_name
+    else:
+        folder = "content/default"
+
+    data = {
+        "default_schedule": {
+            "folder": folder,
+            "transition": "Fade",
+            "transition_offset": 0.5,
+            "image_display_time": 15,
+            "audio_volume": 80,
+        },
+        "schedules": [],
+    }
+    tmp = schedules_path.with_suffix(".json.tmp")
+    config_dir.mkdir(parents=True, exist_ok=True)
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(str(tmp), str(schedules_path))
+    logger.info(f"Created schedules.json with default folder: {folder}")
 
 
 def _build_config(field_values: dict, env_path: Path) -> str:
@@ -229,6 +313,7 @@ def _build_config(field_values: dict, env_path: Path) -> str:
         webdav_host=field_values.get("WEBDAV_HOST", ""),
         webdav_username=field_values.get("WEBDAV_USERNAME", ""),
         webdav_password=field_values.get("WEBDAV_PASSWORD", ""),
+        webdav_root_path=field_values.get("WEBDAV_ROOT_PATH", "/"),
         timezone=field_values.get("TIMEZONE", "UTC"),
     )
 
