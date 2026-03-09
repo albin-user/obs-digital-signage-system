@@ -387,6 +387,30 @@ class DigitalSignageSystem:
 
                     self.logger.info("Schedule switch completed successfully")
 
+                elif self.scheduler.check_settings_change():
+                    schedule = self.scheduler.current_schedule
+                    self.logger.info(f"Applying updated settings for: {schedule.name}")
+
+                    new_volume = self.scheduler.get_current_audio_volume()
+                    self.audio_manager.set_volume(new_volume)
+                    self.logger.info(f"  Audio volume: {new_volume}%")
+
+                    new_offset = self.scheduler.get_current_transition_offset()
+                    self.content_manager.transition_offset = new_offset
+                    self.logger.info(f"  Transition offset: {new_offset}s")
+
+                    new_image_time = self.scheduler.get_current_image_display_time()
+                    self.settings.SLIDE_TRANSITION_SECONDS = new_image_time
+                    # Update already-loaded image durations
+                    for mf in self.content_manager.media_files:
+                        if mf.is_image:
+                            mf.duration = new_image_time
+                    self.logger.info(f"  Image display time: {new_image_time}s")
+
+                    new_transition = self.scheduler.get_current_transition_type()
+                    await self.obs_manager.set_transition(new_transition)
+                    self.logger.info(f"  Transition: {new_transition}")
+
                 # Check every SCHEDULE_CHECK_INTERVAL seconds
                 await asyncio.sleep(self.settings.SCHEDULE_CHECK_INTERVAL)
 

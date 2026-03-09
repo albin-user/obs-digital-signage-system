@@ -8,6 +8,12 @@ let _schedules = [];
 // Active schedule name from status polling
 let _activeScheduleName = "";
 
+// Connection lost tracking
+let _statusFailCount = 0;
+
+// Unsaved changes tracking
+let _formDirty = false;
+
 // -- Toast notifications --
 
 function showToast(message, type) {
@@ -50,6 +56,10 @@ function refreshStatus() {
     fetch("/api/status")
         .then(r => r.json())
         .then(data => {
+            _statusFailCount = 0;
+            var banner = document.getElementById("connection-lost");
+            if (banner) banner.style.display = "none";
+
             const obsEl = document.getElementById("obs-status");
             if (data.obs_connected) {
                 obsEl.textContent = "Connected";
@@ -74,6 +84,11 @@ function refreshStatus() {
             }
         })
         .catch(() => {
+            _statusFailCount++;
+            if (_statusFailCount >= 2) {
+                var banner = document.getElementById("connection-lost");
+                if (banner) banner.style.display = "block";
+            }
             document.getElementById("obs-status").textContent = "Error";
             document.getElementById("obs-status").className = "status-value disconnected";
         });
@@ -109,7 +124,7 @@ function renderScheduleList(schedules) {
         const toggleText = s.enabled ? "Enabled" : "Disabled";
         const folder = s.folder || "--";
         return `
-        <div class="schedule-card">
+        <div class="schedule-card${isLive ? ' schedule-active' : ''}">
             <div class="card-header">
                 <h3>${esc(s.name)} ${liveBadge}</h3>
                 <label class="card-toggle">
@@ -146,13 +161,17 @@ function renderDefault(def) {
 }
 
 function renderDefaultBadge() {
-    var header = document.querySelector("#default-schedule .card-header");
+    var card = document.getElementById("default-schedule");
+    var header = card ? card.querySelector(".card-header") : null;
     if (!header) return;
     // Remove existing live badge if any
     var existing = header.querySelector(".badge-live");
     if (existing) existing.remove();
+    var isDefaultLive = _activeScheduleName === "Default" || _activeScheduleName === "default";
+    // Toggle accent border
+    if (card) card.classList.toggle("schedule-active", isDefaultLive);
     // Add LIVE badge if default is the active schedule
-    if (_activeScheduleName === "Default" || _activeScheduleName === "default") {
+    if (isDefaultLive) {
         var badge = document.createElement("span");
         badge.className = "badge badge-live";
         badge.textContent = "LIVE";
@@ -175,7 +194,7 @@ function checkConflicts() {
             el.innerHTML = conflicts.map(c => {
                 const cls = c.type === "error" ? "alert-error" : "alert-warning";
                 return `<div class="alert ${cls}">${esc(c.message)}</div>`;
-            }).join("");
+            }).join("") + '<p class="conflict-priority">Priority: one-time events &gt; recurring schedules &gt; default</p>';
         })
         .catch(err => console.error("Failed to check conflicts:", err));
 }
@@ -211,9 +230,14 @@ function openModal(schedule) {
     document.getElementById("advanced-settings").removeAttribute("open");
     document.getElementById("folder-preview").style.display = "none";
     hideNewFolderInput();
+    clearTimeError();
     toggleType();
     updateVolumeDisplay();
-    document.getElementById("modal-overlay").style.display = "flex";
+    _formDirty = false;
+    var overlay = document.getElementById("modal-overlay");
+    overlay.classList.remove("closing");
+    overlay.classList.add("active");
+    overlay.style.display = "flex";
     loadFolders();
     setTimeout(function() { document.getElementById("f-name").focus(); }, 50);
 }
@@ -244,8 +268,13 @@ function editDefault() {
             document.getElementById("advanced-settings").setAttribute("open", "");
             document.getElementById("folder-preview").style.display = "none";
             hideNewFolderInput();
+            clearTimeError();
             updateVolumeDisplay();
-            document.getElementById("modal-overlay").style.display = "flex";
+            _formDirty = false;
+            var overlay = document.getElementById("modal-overlay");
+            overlay.classList.remove("closing");
+            overlay.classList.add("active");
+            overlay.style.display = "flex";
             loadFolders();
             setTimeout(function() { document.getElementById("f-folder").focus(); }, 50);
         })
@@ -253,10 +282,30 @@ function editDefault() {
 }
 
 function closeModal() {
-    document.getElementById("modal-overlay").style.display = "none";
+    if (_formDirty) {
+        showConfirm("Discard unsaved changes?").then(function(ok) {
+            if (ok) {
+                _formDirty = false;
+                _doCloseModal();
+            }
+        });
+        return;
+    }
+    _doCloseModal();
+}
+
+function _doCloseModal() {
+    var overlay = document.getElementById("modal-overlay");
+    overlay.classList.add("closing");
+    setTimeout(function() {
+        overlay.style.display = "none";
+        overlay.classList.remove("active", "closing");
+    }, 150);
+
     document.getElementById("f-name").disabled = false;
     document.getElementById("folder-preview").style.display = "none";
     hideNewFolderInput();
+    clearTimeError();
     editingDefault = false;
 
     // Restore hidden fields
@@ -456,9 +505,14 @@ function saveSchedule(e) {
         })
         .then(r => {
             if (!r.ok) return r.json().then(d => { throw new Error(d.error || "Save failed"); });
+            var isLive = _activeScheduleName === "Default" || _activeScheduleName === "default";
+            _formDirty = false;
             closeModal();
             loadSchedules();
             showToast("Default schedule saved");
+            if (isLive) {
+                setTimeout(function() { showToast("Live settings applied", "success"); }, 10000);
+            }
         })
         .catch(err => showToast("Failed to save default schedule: " + err.message, "error"))
         .finally(() => setLoading(submitBtn, false));
@@ -485,6 +539,13 @@ function saveSchedule(e) {
         data.date = document.getElementById("f-date").value;
     }
 
+    // Client-side time validation
+    if (data.start_time && data.end_time && data.end_time <= data.start_time) {
+        document.getElementById("time-error").textContent = "End time must be after start time";
+        return;
+    }
+    clearTimeError();
+
     const editId = document.getElementById("edit-id").value;
     const method = editId ? "PUT" : "POST";
     const url = editId ? `/api/schedules/${editId}` : "/api/schedules";
@@ -500,9 +561,14 @@ function saveSchedule(e) {
         return r.json();
     })
     .then(() => {
+        var isLive = data.name === _activeScheduleName;
+        _formDirty = false;
         closeModal();
         loadSchedules();
         showToast("Schedule saved");
+        if (isLive) {
+            setTimeout(function() { showToast("Live settings applied", "success"); }, 10000);
+        }
     })
     .catch(err => showToast(err.message, "error"))
     .finally(() => setLoading(submitBtn, false));
@@ -603,6 +669,13 @@ function previewFolder(folder) {
         });
 }
 
+// -- Time validation --
+
+function clearTimeError() {
+    var el = document.getElementById("time-error");
+    if (el) el.textContent = "";
+}
+
 // -- Helpers --
 
 function esc(str) {
@@ -614,6 +687,14 @@ function esc(str) {
 // -- Init --
 
 document.getElementById("f-volume").addEventListener("input", updateVolumeDisplay);
+
+// Dirty tracking for unsaved changes warning
+document.getElementById("schedule-form").addEventListener("input", function() { _formDirty = true; });
+document.getElementById("schedule-form").addEventListener("change", function() { _formDirty = true; });
+
+// Clear time error on input
+document.getElementById("f-start").addEventListener("input", clearTimeError);
+document.getElementById("f-end").addEventListener("input", clearTimeError);
 
 // Header buttons
 document.getElementById("btn-add").addEventListener("click", function() { openModal(); });

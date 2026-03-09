@@ -102,6 +102,7 @@ class Scheduler:
         self.default_schedule: Optional[Schedule] = None
         self.current_schedule: Optional[Schedule] = None
         self._switch_needed = False
+        self._settings_changed = False
 
         self._json_path = Path(settings.CONFIG_DIR) / "schedules.json"
         self._load_schedules()
@@ -286,6 +287,23 @@ class Scheduler:
         except Exception as e:
             self.logger.error(f"Failed to migrate schedules: {e}")
 
+    @staticmethod
+    def _is_same_schedule_slot(a, b):
+        """Check if two Schedules represent the same logical slot."""
+        if a is None or b is None:
+            return a is b
+        if a.schedule_type == "default" and b.schedule_type == "default":
+            return True
+        return a.schedule_id == b.schedule_id and a.schedule_id != ""
+
+    @staticmethod
+    def _settings_differ(a, b):
+        """Check if runtime settings differ (excluding folder)."""
+        return (a.audio_volume != b.audio_volume
+                or a.transition_offset != b.transition_offset
+                or a.image_display_time != b.image_display_time
+                or a.transition_type != b.transition_type)
+
     def reload_schedules(self) -> None:
         """Reload schedules from JSON file (called by web UI after changes)."""
         self.logger.info("Reloading schedules from JSON...")
@@ -317,7 +335,16 @@ class Scheduler:
 
         new_active = self.get_active_schedule()
         with self._lock:
-            if new_active != self.current_schedule:
+            old = self.current_schedule
+            if self._is_same_schedule_slot(old, new_active):
+                # Same schedule slot — check for folder vs settings-only change
+                if old.folder != new_active.folder:
+                    self._switch_needed = True  # Folder change = full content switch
+                elif self._settings_differ(old, new_active):
+                    self._settings_changed = True  # Lightweight update
+                self.current_schedule = new_active
+            else:
+                # Different schedule became active
                 self.logger.info(f"Active schedule changed after reload: {new_active.name}")
                 self.current_schedule = new_active
                 self._switch_needed = True
@@ -369,6 +396,14 @@ class Scheduler:
                 old_name = self.current_schedule.name if self.current_schedule else "None"
                 self.logger.info(f"Schedule changed: {old_name} -> {new_schedule.name}")
                 self.current_schedule = new_schedule
+                return True
+        return False
+
+    def check_settings_change(self) -> bool:
+        """Check if settings were updated on the current schedule (without schedule switch)."""
+        with self._lock:
+            if self._settings_changed:
+                self._settings_changed = False
                 return True
         return False
 

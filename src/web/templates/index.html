@@ -12,6 +12,9 @@
         <p class="subtitle">Manage your digital signage schedules. Each schedule controls which content folder plays on screen, what transition effect is used, and at what volume the background music plays. Schedules activate automatically based on their configured day and time.</p>
     </header>
 
+    <!-- Connection lost banner -->
+    <div id="connection-lost" class="connection-lost" style="display:none">Connection to signage system lost &mdash; retrying&hellip;</div>
+
     <!-- Status Bar -->
     <section id="status-bar" class="status-bar">
         <div class="status-card">
@@ -120,6 +123,7 @@
                         <input type="time" id="f-end" value="13:30" required>
                     </div>
                 </div>
+                <small id="time-error" class="form-error"></small>
 
                 <div class="form-group">
                     <label>Folder</label>

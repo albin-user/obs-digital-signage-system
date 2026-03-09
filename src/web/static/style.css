@@ -601,6 +601,68 @@ input:focus, select:focus {
     white-space: nowrap;
 }
 
+/* Connection lost banner */
+.connection-lost {
+    background: rgba(255,152,0,0.18);
+    border: 1px solid var(--yellow);
+    color: #ffcc80;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+/* Modal fade animation */
+@keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes modalScaleIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+@keyframes modalFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+@keyframes modalScaleOut {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.95); }
+}
+.modal-overlay.active {
+    animation: modalFadeIn 0.2s ease;
+}
+.modal-overlay.active .modal {
+    animation: modalScaleIn 0.2s ease;
+}
+.modal-overlay.closing {
+    animation: modalFadeOut 0.15s ease forwards;
+}
+.modal-overlay.closing .modal {
+    animation: modalScaleOut 0.15s ease forwards;
+}
+
+/* Form error hint */
+.form-error {
+    display: block;
+    color: var(--red);
+    font-size: 0.8rem;
+    min-height: 0;
+}
+
+/* Active schedule accent border */
+.schedule-card.schedule-active {
+    border-left: 4px solid var(--accent);
+}
+
+/* Conflict priority explanation */
+.conflict-priority {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     body { padding: 12px; }
