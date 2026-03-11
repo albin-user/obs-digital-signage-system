@@ -4,6 +4,62 @@ All notable changes to the OBS Digital Signage Automation System.
 
 ---
 
+## [2.3.0] - 2026-03-11
+
+### Web UI UX Improvements & Live Settings Apply
+
+Seven frontend improvements to close feedback loops and prevent errors, plus a backend change so schedule setting edits (volume, transition, image time) apply immediately to the live schedule without a full content switch.
+
+**Connection Lost Banner**
+- Orange banner appears after 2 consecutive status-fetch failures: "Connection to signage system lost -- retrying..."
+- Auto-hides when connection is restored
+
+**"Live Settings Applied" Toast**
+- After saving a schedule that has the LIVE badge, a second toast appears ~10 s later confirming the running system picked up the change
+- Only triggers for the active schedule
+
+**Modal Fade Animation**
+- Open: 0.2 s fade-in + scale from 95 %
+- Close: 0.15 s fade-out + scale to 95 %
+- Prevents jarring instant-appear/disappear
+
+**Client-Side Time Validation**
+- End time <= start time shows inline red error: "End time must be after start time"
+- Blocks save until corrected; clears on input
+
+**Active Schedule Accent Border**
+- Schedule card with the LIVE badge gets a 4 px red left border
+- Applies to both regular and default schedule cards
+
+**Unsaved Changes Warning**
+- Closing the modal after any edit triggers "Discard unsaved changes?" confirmation
+- Uses the existing styled confirm dialog (ESC dismissable)
+- Reset on open and after successful save
+
+**Conflict Priority Explanation**
+- When overlap warnings appear, a muted line is appended: "Priority: one-time events > recurring schedules > default"
+
+**Backend: Settings-Only Apply (scheduler + main loop)**
+- `Scheduler` now distinguishes folder changes (full content switch) from settings-only changes (volume, transition, offset, image time)
+- New `check_settings_change()` flag consumed by the main loop
+- Main loop applies volume, transition offset, image display time, and transition type in-place -- no content reload needed
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/web/templates/index.html` | +2 elements (connection-lost div, time-error hint) |
+| `src/web/static/style.css` | +55 lines (banner, animations, error hint, accent border, priority text) |
+| `src/web/static/app.js` | +75 lines (all 7 UX improvements) |
+| `src/core/scheduler.py` | +40 lines (`_is_same_schedule_slot`, `_settings_differ`, `check_settings_change`) |
+| `src/main.py` | +24 lines (settings-apply branch in schedule monitor loop) |
+
+### Testing
+
+- 126/126 tests pass
+
+---
+
 ## [2.2.1] - 2026-02-17
 
 ### UX Polish: Simplified Schedule Admin Panel
@@ -642,6 +698,7 @@ This release includes extensive testing and bug fixes for Ubuntu deployment.
 
 ## Version History
 
+- **2.3.0** (2026-03-11) - UX improvements: connection banner, fade animations, time validation, unsaved changes warning, live settings apply
 - **2.2.1** (2026-02-17) - UX polish: collapsible advanced settings, styled dialogs, folder preview, mobile grid
 - **2.2.0** (2026-02-16) - Web admin panel, JSON schedules, one-time events, code quality fixes
 - **2.1.1** (2025-11-14) - Critical bug fix: OBS scene source deletion after reboot

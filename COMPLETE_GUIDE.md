@@ -1,28 +1,29 @@
 # OBS Digital Signage Automation System - Complete Guide
 
-**Version**: 2.2.1
-**Last Updated**: February 2026
-**Production Ready**: Yes ✅
+**Version**: 2.3.0
+**Last Updated**: March 2026
+**Production Ready**: Yes
 
 ---
 
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [What You Need to Deploy](#what-you-need-to-deploy)
-3. [Prerequisites](#prerequisites)
-4. [Installation Guide - Ubuntu Desktop](#installation-guide---ubuntu-desktop)
-5. [Installation Guide - Windows](#installation-guide---windows)
-6. [OBS Studio Configuration](#obs-studio-configuration)
-7. [Ubuntu Desktop Settings Configuration](#ubuntu-desktop-settings-configuration)
-8. [System Configuration](#system-configuration)
-9. [Adding Content](#adding-content)
-10. [Running the System](#running-the-system)
-11. [Troubleshooting](#troubleshooting)
-12. [Advanced Configuration](#advanced-configuration)
-13. [Security & Credentials](#security--credentials)
-14. [Transferring from Windows to Ubuntu](#transferring-from-windows-to-ubuntu)
-15. [Deployment Verification Checklist](#deployment-verification-checklist)
+2. [Everyday Use Guide](#everyday-use-guide) -- **start here if you just use the admin panel**
+3. [What You Need to Deploy](#what-you-need-to-deploy)
+4. [Prerequisites](#prerequisites)
+5. [Installation Guide - Ubuntu Desktop](#installation-guide---ubuntu-desktop)
+6. [Installation Guide - Windows](#installation-guide---windows)
+7. [OBS Studio Configuration](#obs-studio-configuration)
+8. [Ubuntu Desktop Settings Configuration](#ubuntu-desktop-settings-configuration)
+9. [System Configuration](#system-configuration)
+10. [Adding Content](#adding-content)
+11. [Running the System](#running-the-system)
+12. [Troubleshooting](#troubleshooting)
+13. [Advanced Configuration](#advanced-configuration)
+14. [Security & Credentials](#security--credentials)
+15. [Transferring from Windows to Ubuntu](#transferring-from-windows-to-ubuntu)
+16. [Deployment Verification Checklist](#deployment-verification-checklist)
 
 ---
 
@@ -61,6 +62,129 @@ The OBS Digital Signage Automation System is a professional digital signage solu
 - ✅ Web admin panel for schedule management
 - ✅ Per-schedule audio volume control
 - ✅ Webhook notifications
+
+---
+
+## Everyday Use Guide
+
+> **This section is for anyone who uses the admin panel day-to-day.** No technical knowledge needed. If you're the person who installed the system, skip ahead to [What You Need to Deploy](#what-you-need-to-deploy).
+
+### Opening the Admin Panel
+
+1. Open any web browser (Chrome, Firefox, Edge -- anything works)
+2. Type the address your tech person gave you into the address bar and press Enter
+   - It looks something like: `http://192.168.1.50` or `http://signage-pc`
+3. You'll see the **Admin Panel** -- a dark-themed page with status cards at the top and your schedules below
+
+### Understanding the Dashboard
+
+The row of cards at the top tells you what the system is doing right now:
+
+| Card | What it means |
+|------|---------------|
+| **OBS** | Green "Connected" = the display is working. Red "Disconnected" = the display software needs attention. |
+| **Playing** | The file currently showing on screen (e.g. "welcome.jpg") |
+| **Schedule** | Which schedule is active right now (e.g. "Sunday Service" or "Default") |
+| **Last Sync** | When the system last checked for new content on the NAS |
+| **Media Files** | How many images and videos are loaded |
+| **Sync Now** | Click this button to check for new content immediately instead of waiting |
+
+**Orange "Connection lost" banner:** If this appears at the top, it means the admin panel can't reach the signage computer. This usually means the signage system was restarted or there's a network issue. The panel will reconnect automatically -- just wait a minute. If it doesn't clear up, ask your tech person to check the signage computer.
+
+### Understanding Schedule Cards
+
+Below the dashboard you'll see your schedules. Each one is a card showing its name, when it runs, and which content folder it plays.
+
+Look for these visual cues:
+
+- **Red LIVE badge** (gently pulsing) -- this schedule is active right now
+- **Red left border** -- same thing, makes the active card easy to spot at a glance
+- **Dashed border** at the bottom -- that's the Default Schedule, your "everything else" fallback
+- **Toggle switch** on each card -- flip it to turn a schedule on or off without deleting it
+
+### Creating a New Schedule
+
+1. Click the **+ Add Schedule** button
+2. Fill in the fields:
+   - **Name**: Something clear like "Sunday Service" or "Wednesday Youth Night"
+   - **Type**: "Recurring" for weekly events, or "One-time" for a specific date
+   - **Day** (recurring) or **Date** (one-time): When it should run
+   - **Start Time / End Time**: The hours this schedule is active
+   - **Folder**: Pick from the dropdown -- a preview appears showing what's inside (e.g. "8 files -- 5 images, 3 videos")
+3. Click **Save**
+
+That's it! The system will automatically switch to this content at the right time.
+
+> **Tip:** You don't need to touch "Advanced settings" unless you want to change the transition effect, how long images stay on screen, or the background music volume.
+
+**Time validation:** If you accidentally set the end time before the start time, a red message appears ("End time must be after start time") and the form won't save until you fix it.
+
+### Editing a Schedule
+
+1. Find the schedule card and click **Edit**
+2. Change whatever you need
+3. Click **Save**
+
+If you're editing the schedule that's currently **LIVE**, you'll see a toast message "Schedule saved" followed about 10 seconds later by "Live settings applied" -- this confirms the display has picked up your changes.
+
+**Closing without saving:** If you made changes and try to close the form (Cancel, X, Escape, or clicking outside), the system asks "Discard unsaved changes?" so you don't lose work by accident. Click **Delete** to discard, or **Cancel** to go back and save.
+
+### Editing the Default Schedule
+
+The Default Schedule is the fallback -- it plays whenever no other schedule matches the current time.
+
+1. Click **Edit** on the Default Schedule card (at the bottom, dashed border)
+2. Change the folder, transition, image display time, or volume
+3. Click **Save**
+
+The default schedule can't be deleted or disabled -- it's always there as a safety net.
+
+### Changing What's on Screen Right Now
+
+The most common task: switching which content folder is playing.
+
+1. Find the schedule with the **LIVE** badge
+2. Click **Edit**
+3. Change the **Folder** dropdown to the new folder
+4. Check the preview below the dropdown to make sure you picked the right one
+5. Click **Save**
+6. The display switches to the new content within about 60 seconds
+
+### Turning a Schedule On or Off
+
+Each schedule card has a toggle switch on the right side. Flip it to **disable** a schedule without deleting it -- handy for seasonal events you'll need again later. Flip it back when the time comes.
+
+### Deleting a Schedule
+
+1. Click the red **Delete** button on the schedule card
+2. A confirmation dialog appears -- click **Delete** to confirm, or **Cancel** / press **Escape** to keep it
+
+### When Schedules Overlap
+
+If two schedules cover the same time slot, a warning banner appears above the schedule list. Below the warnings you'll see the priority rule:
+
+> **Priority: one-time events > recurring schedules > default**
+
+This means: a one-time "Easter Sunday" event will always win over a recurring "Sunday Service" schedule for the same time slot. And any named schedule always wins over the Default.
+
+### Syncing New Content
+
+When someone uploads new images or videos to the NAS (Storebox):
+
+- The system checks automatically every 30 seconds
+- Or click the **Sync Now** button to check immediately
+- New files appear in the on-screen rotation within about a minute
+
+### Quick Troubleshooting
+
+| What you see | What to do |
+|-------------|------------|
+| Orange "Connection lost" banner | Wait a minute -- it usually reconnects on its own. If not, ask your tech person. |
+| OBS shows "Disconnected" (red) | The display software needs attention. Contact your tech person. |
+| Wrong content is playing | Check which schedule is LIVE, click Edit, and change the folder. |
+| Content not showing up | Click "Sync Now". Then edit the schedule and check the folder preview to make sure it has files. |
+| Schedule not switching at the right time | Make sure the schedule is enabled (toggle is on) and the start/end times are correct. |
+| "End time must be after start time" error | Your end time is earlier than your start time -- fix the times and save again. |
 
 ---
 
@@ -1302,70 +1426,67 @@ grep ERROR ~/obs-digital-signage-system/logs/digital_signage.log
 
 ---
 
-## Web Admin Panel (v2.2.0)
+## Web Admin Panel
 
-The web admin panel provides a browser-based interface for managing schedules and monitoring system status.
+> For step-by-step instructions on creating schedules, changing content, and everyday tasks, see [Everyday Use Guide](#everyday-use-guide) at the top of this document. This section covers technical details.
 
-### Accessing the Admin Panel
+The web admin panel starts automatically with the system.
 
-The panel starts automatically with the system and is accessible at:
+### Access
 
 ```
 http://<host-ip>:80
 ```
 
-For example: `http://localhost:80` or `http://192.168.1.100:80` from another device on the network.
+Examples: `http://localhost:80` from the signage computer, or `http://192.168.1.100:80` from any device on the same network.
 
-**Note:** Port 80 requires root/sudo on Linux. The system runs on port 80 by default. To change the port, set `WEB_UI_PORT` in your config file.
+Port 80 requires root/sudo on Linux. Change the port with `WEB_UI_PORT` in your config file.
 
-### Dashboard
+### Status Polling
 
-The dashboard shows real-time system status:
-- **OBS Connection**: Whether OBS Studio is connected
-- **Currently Playing**: The media file currently on screen
-- **Active Schedule**: Which schedule is currently active
-- **Last Sync**: Time since last WebDAV synchronization
-- **Uptime**: How long the system has been running
+The dashboard auto-refreshes every 5 seconds. If the backend becomes unreachable (e.g. the signage system is restarting), an orange "Connection lost" banner appears after 2 failed polls and auto-hides on recovery.
 
-Status auto-refreshes every 5 seconds.
+### Schedule Priority
 
-### Managing Schedules
+When multiple schedules overlap the same time window:
+1. **One-time events** (highest)
+2. **Recurring schedules**
+3. **Default schedule** (lowest -- always the fallback)
 
-**Creating a Schedule:**
-1. Click "Add Schedule" — the name field auto-focuses for quick entry
-2. Fill in the basic details:
-   - **Name**: Descriptive name (e.g., "Sunday Service")
-   - **Type**: Recurring (weekly) or One-time (specific date)
-   - **Day/Date**: Which day (recurring) or date (one-time)
-   - **Start/End Time**: When the schedule is active
-   - **Folder**: Content folder on Storebox NAS (browse from dropdown)
-   - **Enabled**: Turn the schedule on or off
-3. Expand **"Advanced settings"** if needed (transition, offset, image time, volume)
-4. Click "Save"
+The conflict checker runs every 30 seconds and shows warnings with this priority rule explained inline.
 
-**Folder Preview:** When you select a folder, a preview box shows the file count (e.g., "8 files (5 images, 3 videos)") and file names, so you can verify you picked the right content.
+### Live Settings Apply
 
-**Editing a Schedule:**
-- Click "Edit" on any schedule card to modify its settings
+When you save changes to the currently active (LIVE) schedule:
+- **Folder change** triggers a full content switch (new scenes created in OBS)
+- **Settings-only change** (volume, transition, image display time) applies immediately without reloading content -- the display adjusts within 60 seconds
+- A "Live settings applied" toast confirms the change was picked up
 
-**Deleting a Schedule:**
-- Click "Delete" on any schedule card — a styled confirmation dialog appears (press ESC or Cancel to dismiss)
+### Form Features
 
-**Default Schedule:**
-- The default schedule always exists and cannot be deleted
-- Click "Edit" to change its folder, transition, or volume settings
-- Advanced settings auto-expand when editing the default (since those are the main fields)
-- It activates whenever no other schedule matches the current time
+- **Auto-focus**: Name field on new schedule, folder field on default schedule edit
+- **Collapsible advanced settings**: Transition, offset, image time, and volume are hidden by default to keep the form simple
+- **Folder preview**: Shows file count and names when a folder is selected
+- **Time validation**: Blocks save if end time is before start time
+- **Unsaved changes warning**: Prompts before discarding edits
+- **Create folder**: The "+ New folder" button creates a folder directly on the NAS
 
-### Conflict Detection
+### API Endpoints (for advanced use)
 
-The system warns about overlapping schedules:
-- **Error (red)**: Two recurring schedules on the same day and time, or two one-time events on the same date and time. These are blocked from saving.
-- **Warning (yellow)**: A one-time event overrides a recurring schedule. You can confirm to allow this.
-
-### Storebox Folder Browser
-
-When creating/editing a schedule, the folder dropdown shows available folders from your Storebox NAS (WebDAV). The dropdown displays loading/error states and paths are restricted to the NAS for security.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/status` | System status (OBS, playing, schedule, sync) |
+| GET | `/api/schedules` | All schedules + default |
+| POST | `/api/schedules` | Create schedule |
+| PUT | `/api/schedules/<id>` | Update schedule |
+| DELETE | `/api/schedules/<id>` | Delete schedule |
+| PATCH | `/api/schedules/<id>/toggle` | Enable/disable schedule |
+| PUT | `/api/schedules/default` | Update default schedule |
+| GET | `/api/schedules/conflicts` | Check for overlaps |
+| GET | `/api/folders` | List NAS folders |
+| GET | `/api/folders/files/<path>` | List files in a folder |
+| POST | `/api/folders` | Create folder on NAS |
+| POST | `/api/sync/trigger` | Trigger immediate WebDAV sync |
 
 ---
 
@@ -1418,7 +1539,7 @@ To run multiple signage displays:
 
 Or use the same path for identical content across all displays.
 
-### Time-Based Scheduling (v2.2.0+)
+### Time-Based Scheduling
 
 The system supports automatic time-based content scheduling through the web admin panel.
 
@@ -1427,16 +1548,13 @@ The system supports automatic time-based content scheduling through the web admi
 - **One-time**: Plays only on a specific date (e.g., Christmas Eve 2026-12-24)
 - **Default**: Fallback content when no other schedule is active
 
-**Priority Order:**
-1. One-time events (highest priority)
-2. Recurring schedules
-3. Default schedule (always last fallback)
+**Priority:** One-time events > recurring schedules > default.
 
 **Per-Schedule Settings:**
-Each schedule can have its own transition type, transition offset, image display time, and audio volume.
+Each schedule can have its own transition type, transition offset, image display time, and audio volume. Changes to the active schedule apply automatically within 60 seconds.
 
 **Management:**
-All schedules are managed through the web admin panel at `http://<host>:80`. See [Web Admin Panel](#web-admin-panel-v220) below.
+All schedules are managed through the web admin panel. See [Everyday Use Guide](#everyday-use-guide) for step-by-step instructions.
 
 ### Monitoring and Alerts
 
@@ -1753,7 +1871,7 @@ obs-digital-signage-system/
 These are not needed to run the system. Include them if you want docs or testing.
 
 ```
-├── tests/                    # Unit tests (pytest, 82 tests)
+├── tests/                    # Unit tests (pytest, 126 tests)
 ├── deployment/
 │   └── obs-signage.service   # Systemd service template (Linux auto-start)
 ├── start_prod.bat            # Windows production launcher (alternative to START.bat)
