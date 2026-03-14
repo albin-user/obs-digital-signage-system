@@ -18,31 +18,31 @@
     <!-- Status Bar -->
     <section id="status-bar" class="status-bar">
         <div class="status-card">
-            <span class="status-label">OBS</span>
+            <span class="status-label"><span class="status-icon">🎬</span> OBS</span>
             <span id="obs-status" class="status-value">--</span>
         </div>
         <div class="status-card">
-            <span class="status-label">Playing</span>
+            <span class="status-label"><span class="status-icon">▶</span> Playing</span>
             <span id="playing-status" class="status-value">--</span>
         </div>
         <div class="status-card">
-            <span class="status-label">Schedule</span>
+            <span class="status-label"><span class="status-icon">📅</span> Schedule</span>
             <span id="schedule-status" class="status-value">--</span>
         </div>
         <div class="status-card">
-            <span class="status-label">Last Sync</span>
+            <span class="status-label"><span class="status-icon">🔄</span> Last Sync</span>
             <span id="sync-status" class="status-value">--</span>
         </div>
         <div class="status-card" id="card-uptime">
-            <span class="status-label">Uptime</span>
+            <span class="status-label"><span class="status-icon">⏱</span> Uptime</span>
             <span id="uptime-status" class="status-value">--</span>
         </div>
         <div class="status-card">
-            <span class="status-label">Media Files</span>
+            <span class="status-label"><span class="status-icon">🎞</span> Media Files</span>
             <span id="media-count" class="status-value">--</span>
         </div>
         <div class="status-card">
-            <span class="status-label">Sync</span>
+            <span class="status-label"><span class="status-icon">☁</span> Sync</span>
             <button id="btn-sync" class="btn btn-small">Sync Now</button>
         </div>
     </section>
@@ -83,7 +83,7 @@
                 <input type="hidden" id="edit-id" value="">
 
                 <div class="form-group">
-                    <label>Name</label>
+                    <label>Name <span class="required">*</span></label>
                     <input type="text" id="f-name" required placeholder="e.g., Sunday Service">
                 </div>
 
@@ -115,18 +115,18 @@
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Start Time</label>
+                        <label>Start Time <span class="required">*</span></label>
                         <input type="time" id="f-start" value="08:00" required>
                     </div>
                     <div class="form-group">
-                        <label>End Time</label>
+                        <label>End Time <span class="required">*</span></label>
                         <input type="time" id="f-end" value="13:30" required>
                     </div>
                 </div>
                 <small id="time-error" class="form-error"></small>
 
                 <div class="form-group">
-                    <label>Folder</label>
+                    <label>Folder <span class="required">*</span></label>
                     <div style="display:flex;gap:6px;align-items:center;">
                         <select id="f-folder" style="flex:1;">
                             <option value="">-- Select folder --</option>

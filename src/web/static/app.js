@@ -111,13 +111,13 @@ function loadSchedules() {
 function renderScheduleList(schedules) {
     const container = document.getElementById("schedule-list");
     if (schedules.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">No custom schedules yet. Click "+ Add Schedule" to create one.</p>';
+        container.innerHTML = '<div class="empty-state"><p class="empty-state-icon">\ud83d\udcc5</p><p class="empty-state-text">No schedules yet</p><p class="empty-state-hint">Click <strong>+ Add Schedule</strong> to get started</p></div>';
         return;
     }
     container.innerHTML = schedules.map(s => {
-        const typeInfo = s.type === "recurring"
-            ? `Recurring: Every ${DAYS[s.day_of_week] || "?"}`
-            : `One-time: ${s.date || "?"}`;
+        const dayLabel = s.type === "recurring"
+            ? (DAYS[s.day_of_week] || "?")
+            : (s.date || "?");
         const isLive = s.name === _activeScheduleName;
         const liveBadge = isLive ? '<span class="badge badge-live">LIVE</span>' : '';
         const toggleChecked = s.enabled ? "checked" : "";
@@ -134,12 +134,14 @@ function renderScheduleList(schedules) {
                 </label>
             </div>
             <div class="card-details">
-                <span>${typeInfo}</span>
-                <span>Time: ${s.start_time} - ${s.end_time}</span><br>
-                <span>Folder: ${esc(folder)}</span><br>
-                <span>Transition: ${esc(s.transition)} (${s.transition_offset}s offset)</span>
-                <span>Images: ${s.image_display_time}s each</span>
-                <span>Volume: ${s.audio_volume}%</span>
+                <div style="margin-bottom:8px;">
+                    <span class="detail-pill pill-day">${esc(dayLabel)}</span>
+                    <span class="detail-pill pill-time">${s.start_time} \u2013 ${s.end_time}</span>
+                </div>
+                <div class="card-detail-row"><span class="detail-label">Folder</span><span class="detail-value">${esc(folder)}</span></div>
+                <div class="card-detail-row"><span class="detail-label">Transition</span><span class="detail-value">${esc(s.transition)} (${s.transition_offset}s offset)</span></div>
+                <div class="card-detail-row"><span class="detail-label">Images</span><span class="detail-value">${s.image_display_time}s each</span></div>
+                <div class="card-detail-row"><span class="detail-label">Volume</span><span class="detail-value">${s.audio_volume}%</span></div>
             </div>
             <div class="card-actions">
                 <button class="btn btn-small" data-action="edit" data-id="${esc(s.id)}">Edit</button>
@@ -152,10 +154,10 @@ function renderScheduleList(schedules) {
 function renderDefault(def) {
     const el = document.getElementById("default-details");
     el.innerHTML = `
-        <span>Folder: ${esc(def.folder || "--")}</span><br>
-        <span>Transition: ${esc(def.transition || "Fade")} (${def.transition_offset || 0.5}s offset)</span>
-        <span>Images: ${def.image_display_time || 15}s each</span>
-        <span>Volume: ${def.audio_volume || 80}%</span>
+        <div class="card-detail-row"><span class="detail-label">Folder</span><span class="detail-value">${esc(def.folder || "--")}</span></div>
+        <div class="card-detail-row"><span class="detail-label">Transition</span><span class="detail-value">${esc(def.transition || "Fade")} (${def.transition_offset || 0.5}s offset)</span></div>
+        <div class="card-detail-row"><span class="detail-label">Images</span><span class="detail-value">${def.image_display_time || 15}s each</span></div>
+        <div class="card-detail-row"><span class="detail-label">Volume</span><span class="detail-value">${def.audio_volume || 80}%</span></div>
     `;
     renderDefaultBadge();
 }
@@ -327,7 +329,10 @@ function toggleType() {
 }
 
 function updateVolumeDisplay() {
-    document.getElementById("volume-display").textContent = document.getElementById("f-volume").value + "%";
+    var slider = document.getElementById("f-volume");
+    var val = slider.value;
+    document.getElementById("volume-display").textContent = val + "%";
+    slider.style.setProperty("--fill", val + "%");
 }
 
 // -- Folder loading --
