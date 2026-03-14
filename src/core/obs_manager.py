@@ -178,6 +178,11 @@ class OBSManager:
                     except Exception as e:
                         self.logger.warning(f"Could not remove .sentinel folder: {e}")
 
+                # Ensure scene collection has at least one scene to prevent OBS crash
+                # OBS 30.2+ crashes with "basic_string: construction from null" when
+                # current_scene is empty and no scenes exist
+                self._ensure_valid_scene_collection()
+
                 self.obs_process = subprocess.Popen(
                     cmd_args,
                     cwd=str(obs_working_dir),  # Critical: Set working directory
@@ -209,6 +214,56 @@ class OBSManager:
         except Exception as e:
             self.logger.error(f"Failed to launch OBS: {e}")
             return False
+
+    def _ensure_valid_scene_collection(self) -> None:
+        """Ensure OBS scene collection has at least one scene.
+
+        OBS 30.2+ crashes with 'basic_string: construction from null is not valid'
+        when the scene collection has current_scene="" and no scenes. This can happen
+        when our signage script removes all scenes during shutdown or after a crash.
+        """
+        try:
+            import json, uuid as _uuid
+            scenes_dir = Path.home() / ".config/obs-studio/basic/scenes"
+            if not scenes_dir.exists():
+                return
+
+            for scene_file in scenes_dir.glob("*.json"):
+                if scene_file.name.endswith(".bak"):
+                    continue
+                try:
+                    with open(scene_file) as f:
+                        data = json.load(f)
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+                sources = data.get("sources", [])
+                has_scene = any(s.get("id") == "scene" for s in sources)
+
+                if not has_scene:
+                    self.logger.warning(f"Scene collection '{scene_file.name}' has no scenes — adding fallback")
+                    scene_uuid = str(_uuid.uuid4())
+                    sources.append({
+                        "prev_ver": 503447555, "name": "Scene", "uuid": scene_uuid,
+                        "id": "scene", "versioned_id": "scene", "settings": {},
+                        "mixers": 0, "sync": 0, "flags": 0, "volume": 1.0,
+                        "balance": 0.5, "enabled": True, "muted": False,
+                        "push-to-mute": False, "push-to-mute-delay": 0,
+                        "push-to-talk": False, "push-to-talk-delay": 0,
+                        "hotkeys": {}, "deinterlace_mode": 0,
+                        "deinterlace_field_order": 0, "monitoring_type": 0,
+                        "private_settings": {}
+                    })
+                    data["sources"] = sources
+                    data["current_scene"] = "Scene"
+                    data["current_program_scene"] = "Scene"
+                    data["scene_order"] = [{"name": "Scene"}]
+
+                    with open(scene_file, "w") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                    self.logger.info("Fallback scene added to prevent OBS crash")
+        except Exception as e:
+            self.logger.warning(f"Could not validate scene collection: {e}")
 
     def _find_obs_executable(self) -> Optional[Path]:
         """Find OBS executable across platforms."""
