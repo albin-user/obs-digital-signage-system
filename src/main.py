@@ -411,8 +411,11 @@ class DigitalSignageSystem:
                     await self.obs_manager.set_transition(new_transition)
                     self.logger.info(f"  Transition: {new_transition}")
 
-                # Check every SCHEDULE_CHECK_INTERVAL seconds
-                await asyncio.sleep(self.settings.SCHEDULE_CHECK_INTERVAL)
+                # Wait for web UI change or poll timeout
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, self.scheduler.wait_for_change, self.settings.SCHEDULE_CHECK_INTERVAL
+                )
 
             except Exception as e:
                 self.logger.error(f"Schedule monitoring error: {e}")

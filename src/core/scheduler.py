@@ -98,6 +98,7 @@ class Scheduler:
             self.timezone = ZoneInfo("UTC")
 
         self._lock = threading.Lock()
+        self._apply_event = threading.Event()
         self.schedules: List[Schedule] = []
         self.default_schedule: Optional[Schedule] = None
         self.current_schedule: Optional[Schedule] = None
@@ -348,6 +349,15 @@ class Scheduler:
                 self.logger.info(f"Active schedule changed after reload: {new_active.name}")
                 self.current_schedule = new_active
                 self._switch_needed = True
+
+        # Wake the monitoring loop immediately
+        self._apply_event.set()
+
+    def wait_for_change(self, timeout: float) -> bool:
+        """Block until settings change or timeout. Thread-safe."""
+        triggered = self._apply_event.wait(timeout=timeout)
+        self._apply_event.clear()
+        return triggered
 
     def _parse_time(self, time_str: str) -> Optional[time]:
         """Parse time string in HH:MM format."""
