@@ -23,6 +23,10 @@ from config.settings import Settings
 class OBSManager:
     """Manages OBS Studio lifecycle and WebSocket communication using obsws-python."""
 
+    # Crash loop detection: max crashes within window before giving up
+    CRASH_LOOP_MAX = 3
+    CRASH_LOOP_WINDOW = 300  # 5 minutes
+
     def __init__(self, settings: Settings):
         self.settings = settings
         self.logger = logging.getLogger(__name__)
@@ -32,6 +36,7 @@ class OBSManager:
         self.obs_process: Optional[subprocess.Popen] = None
         self.startup_time: Optional[float] = None
         self._lock = threading.RLock()
+        self._crash_times: List[float] = []
 
     async def initialize(self) -> bool:
         """Initialize OBS Studio with full automation."""
@@ -188,7 +193,8 @@ class OBSManager:
                     cwd=str(obs_working_dir),  # Critical: Set working directory
                     env=env,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
+                    preexec_fn=os.setsid,
                 )
 
             self.startup_time = time.time()
@@ -409,12 +415,14 @@ class OBSManager:
                 # Windows monitor detection - basic approach
                 return [0, 1]  # Assume up to 2 monitors
             else:
-                # Linux monitor detection
+                # Linux monitor detection — preserve full env so xrandr finds PATH etc.
+                xrandr_env = os.environ.copy()
+                xrandr_env.setdefault('DISPLAY', ':0')
                 result = subprocess.run(
                     ["xrandr", "--listmonitors"],
                     capture_output=True,
                     text=True,
-                    env={'DISPLAY': ':0'}
+                    env=xrandr_env,
                 )
                 if result.returncode == 0:
                     lines = result.stdout.strip().split('\n')[1:]  # Skip header
@@ -451,10 +459,53 @@ class OBSManager:
             self.connected = False
             self.logger.warning("Connection error detected — marking OBS as disconnected")
 
+    def _cleanup_zombie_obs(self) -> None:
+        """Reap zombie OBS processes (Linux) and kill stuck processes."""
+        # Reap our own child if it's defunct
+        if self.obs_process is not None:
+            ret = self.obs_process.poll()
+            if ret is not None:
+                self.logger.info(f"Reaped OBS child process (exit code {ret})")
+                # Kill entire process group on Linux
+                if platform.system() != "Windows":
+                    try:
+                        os.killpg(self.obs_process.pid, 9)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                self.obs_process = None
+
+        # Also look for zombie OBS processes via psutil
+        if platform.system() != "Windows":
+            for proc in psutil.process_iter(['name', 'status']):
+                try:
+                    if proc.info['status'] == psutil.STATUS_ZOMBIE:
+                        pname = (proc.info.get('name') or '').lower()
+                        if 'obs' in pname:
+                            self.logger.warning(f"Killing zombie OBS process (PID {proc.pid})")
+                            os.waitpid(proc.pid, os.WNOHANG)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, ChildProcessError):
+                    pass
+
+    def _is_crash_looping(self) -> bool:
+        """Check if OBS is crash-looping (too many crashes in short window)."""
+        now = time.time()
+        self._crash_times = [t for t in self._crash_times if now - t < self.CRASH_LOOP_WINDOW]
+        self._crash_times.append(now)
+        if len(self._crash_times) >= self.CRASH_LOOP_MAX:
+            self.logger.critical(
+                f"OBS crash loop detected: {len(self._crash_times)} crashes in "
+                f"{self.CRASH_LOOP_WINDOW}s — stopping relaunch attempts"
+            )
+            return True
+        return False
+
     async def recover(self) -> bool:
         """Attempt to recover OBS connection, relaunching OBS if needed."""
         try:
             self.logger.info("Attempting OBS recovery...")
+
+            # Clean up zombie processes first
+            self._cleanup_zombie_obs()
 
             # Reset connection state
             with self._lock:
@@ -477,6 +528,10 @@ class OBSManager:
 
             # Reconnect failed - check if OBS is still running
             if not self._is_obs_running():
+                # Crash loop guard
+                if self._is_crash_looping():
+                    return False
+
                 self.logger.warning("OBS is not running - attempting relaunch")
                 if await self._launch_obs():
                     if await self._connect_websocket():
@@ -768,12 +823,27 @@ class OBSManager:
         try:
             self.logger.info("Shutting down OBS Manager...")
 
-            # Disconnect event client
+            # Disconnect event client and close its WebSocket
             if self.event_client:
-                self.event_client.unsubscribe()
+                try:
+                    self.event_client.unsubscribe()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self.event_client, 'base_client') and hasattr(self.event_client.base_client, 'ws'):
+                        self.event_client.base_client.ws.close()
+                except Exception:
+                    pass
+                self.event_client = None
 
-            # No explicit disconnect needed for obsws-python ReqClient
+            # Close ReqClient WebSocket
             with self._lock:
+                if self.client:
+                    try:
+                        if hasattr(self.client, 'base_client') and hasattr(self.client.base_client, 'ws'):
+                            self.client.base_client.ws.close()
+                    except Exception:
+                        pass
                 self.connected = False
                 self.client = None
 

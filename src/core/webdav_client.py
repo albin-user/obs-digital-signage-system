@@ -5,6 +5,7 @@ Handles automated content downloading and change detection.
 
 import asyncio
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional, Set, Dict
 import time
@@ -266,11 +267,26 @@ class WebDAVClient:
             self.logger.error(f"Error checking if should download {filename}: {e}")
             return True  # Download on error to be safe
     
+    # Minimum free disk space required before downloading (100 MB)
+    MIN_FREE_DISK_BYTES = 100 * 1024 * 1024
+
     async def _download_file(self, remote_filename: str, local_path: Path) -> bool:
         """Download file from WebDAV to local path."""
         # Define temp_path before try so finally can always clean it up
         temp_path = local_path.with_suffix(local_path.suffix + '.tmp')
         try:
+            # Check available disk space before downloading
+            try:
+                disk = shutil.disk_usage(local_path.parent)
+                if disk.free < self.MIN_FREE_DISK_BYTES:
+                    self.logger.error(
+                        f"Insufficient disk space: {disk.free / 1024 / 1024:.0f} MB free, "
+                        f"need at least {self.MIN_FREE_DISK_BYTES / 1024 / 1024:.0f} MB — skipping {remote_filename}"
+                    )
+                    return False
+            except OSError as e:
+                self.logger.warning(f"Could not check disk space: {e}")
+
             # Construct the full remote path (webdav4 handles URL encoding internally)
             remote_path = f"{self.settings.WEBDAV_ROOT_PATH}/{remote_filename}".replace('//', '/')
             if not remote_path.startswith('/'):

@@ -57,6 +57,7 @@ class DigitalSignageSystem:
         if platform.system() != "Windows":
             signal.signal(signal.SIGINT, self._signal_handler)
             signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGHUP, self._signal_handler)
         
         # Validate configuration
         config_errors = self.settings.validate()
@@ -180,7 +181,10 @@ class DigitalSignageSystem:
                     # Suppress Flask/Werkzeug default logging
                     log = logging.getLogger("werkzeug")
                     log.setLevel(logging.WARNING)
-                    self._web_app.run(host="0.0.0.0", port=self._web_port, debug=False, use_reloader=False)
+                    self._web_app.run(
+                        host="0.0.0.0", port=self._web_port,
+                        debug=False, use_reloader=False, threaded=True,
+                    )
                 except Exception as e:
                     self.logger.error(f"Flask thread crashed: {e}")
 
@@ -288,7 +292,9 @@ class DigitalSignageSystem:
                     pass
     
     async def _webdav_sync_loop(self) -> None:
-        """WebDAV synchronization loop."""
+        """WebDAV synchronization loop with exponential backoff on failure."""
+        backoff = 30  # Normal sync interval
+        max_backoff = 300  # 5 minutes max
         while self.running:
             try:
                 if self.webdav_client and await self.webdav_client.test_connection():
@@ -297,12 +303,15 @@ class DigitalSignageSystem:
                         self.logger.info("Content changes detected, updating scenes...")
                         await self.content_manager.scan_and_update_content()
                         await self.audio_manager.scan_and_start_audio()
-                
-                await asyncio.sleep(30)  # 30-second sync interval
-                
+                    backoff = 30  # Reset on success
+
+                await asyncio.sleep(backoff)
+
             except Exception as e:
                 self.logger.error(f"WebDAV sync error: {e}")
-                await asyncio.sleep(60)  # Longer delay on error
+                backoff = min(backoff * 2, max_backoff)
+                self.logger.info(f"Next WebDAV retry in {backoff}s")
+                await asyncio.sleep(backoff)
     
     async def _content_rotation_loop(self) -> None:
         """Content rotation management loop."""
@@ -405,6 +414,8 @@ class DigitalSignageSystem:
                     for mf in self.content_manager.media_files:
                         if mf.is_image:
                             mf.duration = new_image_time
+                    # Reset playback timer so the current slide uses the new duration
+                    self.content_manager.playback_start_time = time.time()
                     self.logger.info(f"  Image display time: {new_image_time}s")
 
                     new_transition = self.scheduler.get_current_transition_type()

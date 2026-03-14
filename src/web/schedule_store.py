@@ -5,6 +5,7 @@ JSON file-based schedule storage with CRUD operations and conflict detection.
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -137,6 +138,7 @@ class ScheduleStore:
 
     def __init__(self, config_path: Path):
         self.file_path = config_path / "schedules.json"
+        self._lock = threading.RLock()
         self._ensure_file()
 
     def _ensure_file(self) -> None:
@@ -146,19 +148,46 @@ class ScheduleStore:
             logger.info("Created default schedules.json")
 
     def _read(self) -> dict:
-        try:
-            with open(self.file_path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to read schedules.json: {e}")
-            return DEFAULT_SCHEDULES.copy()
+        with self._lock:
+            try:
+                with open(self.file_path, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Failed to read schedules.json: {e}")
+                return DEFAULT_SCHEDULES.copy()
 
     def _write(self, data: dict) -> None:
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.file_path.with_suffix(".json.tmp")
-        with open(tmp_path, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp_path, self.file_path)
+        with self._lock:
+            self.file_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self.file_path.with_suffix(".json.tmp")
+            bak_path = self.file_path.with_suffix(".json.bak")
+            try:
+                with open(tmp_path, "w") as f:
+                    json.dump(data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+
+                # Validate: re-read and parse the temp file to catch truncation
+                with open(tmp_path, "r") as f:
+                    json.load(f)
+
+                # Keep a backup of the current good copy before replacing
+                if self.file_path.exists():
+                    try:
+                        # Copy (not rename) so file_path stays valid during replace
+                        import shutil
+                        shutil.copy2(self.file_path, bak_path)
+                    except Exception:
+                        pass  # Best-effort backup
+
+                os.replace(tmp_path, self.file_path)
+            except Exception:
+                # Clean up failed temp file
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
 
     # -- CRUD --
 
@@ -170,10 +199,11 @@ class ScheduleStore:
         return self._read().get("default_schedule", DEFAULT_SCHEDULES["default_schedule"])
 
     def update_default(self, data: dict) -> dict:
-        store = self._read()
-        store["default_schedule"].update(data)
-        self._write(store)
-        return store["default_schedule"]
+        with self._lock:
+            store = self._read()
+            store["default_schedule"].update(data)
+            self._write(store)
+            return store["default_schedule"]
 
     def get_schedules(self) -> list[dict]:
         return self._read().get("schedules", [])
@@ -185,66 +215,69 @@ class ScheduleStore:
         return None
 
     def create_schedule(self, data: dict) -> dict:
-        store = self._read()
-        schedule = {
-            "id": str(uuid.uuid4()),
-            "name": data["name"],
-            "type": data["type"],
-            "folder": data["folder"],
-            "transition": data.get("transition", "Fade"),
-            "transition_offset": float(data.get("transition_offset", 2.0)),
-            "image_display_time": int(data.get("image_display_time", 15)),
-            "audio_volume": int(data.get("audio_volume", 100)),
-            "enabled": data.get("enabled", True),
-            "created_at": datetime.now().isoformat(),
-        }
+        with self._lock:
+            store = self._read()
+            schedule = {
+                "id": str(uuid.uuid4()),
+                "name": data["name"],
+                "type": data["type"],
+                "folder": data["folder"],
+                "transition": data.get("transition", "Fade"),
+                "transition_offset": float(data.get("transition_offset", 2.0)),
+                "image_display_time": int(data.get("image_display_time", 15)),
+                "audio_volume": int(data.get("audio_volume", 100)),
+                "enabled": data.get("enabled", True),
+                "created_at": datetime.now().isoformat(),
+            }
 
-        if data["type"] == "recurring":
-            schedule["day_of_week"] = int(data["day_of_week"])
-        elif data["type"] == "one-time":
-            schedule["date"] = data["date"]
+            if data["type"] == "recurring":
+                schedule["day_of_week"] = int(data["day_of_week"])
+            elif data["type"] == "one-time":
+                schedule["date"] = data["date"]
 
-        schedule["start_time"] = data["start_time"]
-        schedule["end_time"] = data["end_time"]
+            schedule["start_time"] = data["start_time"]
+            schedule["end_time"] = data["end_time"]
 
-        store["schedules"].append(schedule)
-        self._write(store)
-        logger.info(f"Created schedule: {schedule['name']} ({schedule['id']})")
-        return schedule
+            store["schedules"].append(schedule)
+            self._write(store)
+            logger.info(f"Created schedule: {schedule['name']} ({schedule['id']})")
+            return schedule
 
     def update_schedule(self, schedule_id: str, data: dict) -> Optional[dict]:
-        store = self._read()
-        for i, s in enumerate(store["schedules"]):
-            if s["id"] == schedule_id:
-                # Update allowed fields
-                for key in [
-                    "name", "type", "folder", "transition", "transition_offset",
-                    "image_display_time", "audio_volume", "day_of_week", "date",
-                    "start_time", "end_time", "enabled",
-                ]:
-                    if key in data:
-                        val = data[key]
-                        if key == "transition_offset":
-                            val = float(val)
-                        elif key in ("image_display_time", "audio_volume", "day_of_week"):
-                            val = int(val)
-                        elif key == "enabled":
-                            val = bool(val)
-                        store["schedules"][i][key] = val
-                self._write(store)
-                logger.info(f"Updated schedule: {schedule_id}")
-                return store["schedules"][i]
-        return None
+        with self._lock:
+            store = self._read()
+            for i, s in enumerate(store["schedules"]):
+                if s["id"] == schedule_id:
+                    # Update allowed fields
+                    for key in [
+                        "name", "type", "folder", "transition", "transition_offset",
+                        "image_display_time", "audio_volume", "day_of_week", "date",
+                        "start_time", "end_time", "enabled",
+                    ]:
+                        if key in data:
+                            val = data[key]
+                            if key == "transition_offset":
+                                val = float(val)
+                            elif key in ("image_display_time", "audio_volume", "day_of_week"):
+                                val = int(val)
+                            elif key == "enabled":
+                                val = bool(val)
+                            store["schedules"][i][key] = val
+                    self._write(store)
+                    logger.info(f"Updated schedule: {schedule_id}")
+                    return store["schedules"][i]
+            return None
 
     def delete_schedule(self, schedule_id: str) -> bool:
-        store = self._read()
-        before = len(store["schedules"])
-        store["schedules"] = [s for s in store["schedules"] if s["id"] != schedule_id]
-        if len(store["schedules"]) < before:
-            self._write(store)
-            logger.info(f"Deleted schedule: {schedule_id}")
-            return True
-        return False
+        with self._lock:
+            store = self._read()
+            before = len(store["schedules"])
+            store["schedules"] = [s for s in store["schedules"] if s["id"] != schedule_id]
+            if len(store["schedules"]) < before:
+                self._write(store)
+                logger.info(f"Deleted schedule: {schedule_id}")
+                return True
+            return False
 
     # -- Conflict detection --
 
@@ -309,12 +342,26 @@ class ScheduleStore:
 
     @staticmethod
     def _times_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
-        """Check if two HH:MM time ranges overlap."""
+        """Check if two HH:MM time ranges overlap (handles midnight-crossing)."""
         try:
             sa = int(start_a.replace(":", ""))
             ea = int(end_a.replace(":", ""))
             sb = int(start_b.replace(":", ""))
             eb = int(end_b.replace(":", ""))
-            return sa < eb and sb < ea
+
+            # Normalize midnight-crossing ranges by checking both against
+            # a virtual 48-hour timeline.  A range like 23:00-02:00 becomes
+            # [2300,2600) — we add 2400 to the end when it wraps.
+            def _ranges(s, e):
+                if s < e:
+                    return [(s, e)]
+                # Crosses midnight: split into [s,2400) and [0,e)
+                return [(s, 2400), (0, e)]
+
+            for (a0, a1) in _ranges(sa, ea):
+                for (b0, b1) in _ranges(sb, eb):
+                    if a0 < b1 and b0 < a1:
+                        return True
+            return False
         except (ValueError, AttributeError):
             return False
