@@ -18,7 +18,7 @@ DEFAULT_SCHEDULES = {
         "transition": "Fade",
         "transition_offset": 0.5,
         "image_display_time": 15,
-        "audio_volume": 80,
+        "audio_volume": 100,
     },
     "schedules": [],
 }
@@ -194,7 +194,7 @@ class ScheduleStore:
             "transition": data.get("transition", "Fade"),
             "transition_offset": float(data.get("transition_offset", 2.0)),
             "image_display_time": int(data.get("image_display_time", 15)),
-            "audio_volume": int(data.get("audio_volume", 80)),
+            "audio_volume": int(data.get("audio_volume", 100)),
             "enabled": data.get("enabled", True),
             "created_at": datetime.now().isoformat(),
         }

@@ -283,7 +283,7 @@ def _write_initial_schedules(config_dir: Path, webdav_root_path: str, default_fo
             "transition": "Fade",
             "transition_offset": 0.5,
             "image_display_time": 15,
-            "audio_volume": 80,
+            "audio_volume": 100,
         },
         "schedules": [],
     }

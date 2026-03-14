@@ -24,7 +24,7 @@ class Schedule:
         transition_type: str,
         transition_offset: float,
         image_display_time: int = 15,
-        audio_volume: int = 80,
+        audio_volume: int = 100,
         schedule_type: str = "recurring",
         day_of_week: Optional[int] = None,
         start_time: Optional[time] = None,
@@ -162,7 +162,7 @@ class Scheduler:
             transition_type=default_data.get("transition", "Fade"),
             transition_offset=float(default_data.get("transition_offset", 0.5)),
             image_display_time=int(default_data.get("image_display_time", 15)),
-            audio_volume=int(default_data.get("audio_volume", 80)),
+            audio_volume=int(default_data.get("audio_volume", 100)),
             schedule_type="default",
         )
         self.logger.info(f"Loaded default schedule: {default_schedule}")
@@ -196,7 +196,7 @@ class Scheduler:
                 transition_type=sdata.get("transition", "Fade"),
                 transition_offset=float(sdata.get("transition_offset", 2.0)),
                 image_display_time=int(sdata.get("image_display_time", 15)),
-                audio_volume=int(sdata.get("audio_volume", 80)),
+                audio_volume=int(sdata.get("audio_volume", 100)),
                 schedule_type=sdata.get("type", "recurring"),
                 day_of_week=sdata.get("day_of_week"),
                 start_time=start_time,
@@ -256,7 +256,7 @@ class Scheduler:
                 "transition": self.default_schedule.transition_type if self.default_schedule else "Fade",
                 "transition_offset": self.default_schedule.transition_offset if self.default_schedule else 0.5,
                 "image_display_time": 15,
-                "audio_volume": 80,
+                "audio_volume": 100,
             },
             "schedules": [],
         }

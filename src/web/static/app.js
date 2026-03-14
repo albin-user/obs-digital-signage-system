@@ -157,7 +157,7 @@ function renderDefault(def) {
         <div class="card-detail-row"><span class="detail-label">Folder</span><span class="detail-value">${esc(def.folder || "--")}</span></div>
         <div class="card-detail-row"><span class="detail-label">Transition</span><span class="detail-value">${esc(def.transition || "Fade")} (${def.transition_offset || 0.5}s offset)</span></div>
         <div class="card-detail-row"><span class="detail-label">Images</span><span class="detail-value">${def.image_display_time || 15}s each</span></div>
-        <div class="card-detail-row"><span class="detail-label">Volume</span><span class="detail-value">${def.audio_volume || 80}%</span></div>
+        <div class="card-detail-row"><span class="detail-label">Volume</span><span class="detail-value">${def.audio_volume != null ? def.audio_volume : 100}%</span></div>
     `;
     renderDefaultBadge();
 }
@@ -221,12 +221,12 @@ function openModal(schedule) {
         document.getElementById("f-transition").value = schedule.transition || "Fade";
         document.getElementById("f-offset").value = schedule.transition_offset ?? 2.0;
         document.getElementById("f-imgtime").value = schedule.image_display_time ?? 15;
-        document.getElementById("f-volume").value = schedule.audio_volume ?? 80;
+        document.getElementById("f-volume").value = schedule.audio_volume ?? 100;
         document.getElementById("f-enabled").checked = schedule.enabled !== false;
     } else {
         document.getElementById("schedule-form").reset();
         document.getElementById("f-day").value = 6;
-        document.getElementById("f-volume").value = 80;
+        document.getElementById("f-volume").value = 100;
     }
 
     document.getElementById("advanced-settings").removeAttribute("open");
@@ -265,7 +265,7 @@ function editDefault() {
             document.getElementById("f-transition").value = def.transition || "Fade";
             document.getElementById("f-offset").value = def.transition_offset ?? 0.5;
             document.getElementById("f-imgtime").value = def.image_display_time ?? 15;
-            document.getElementById("f-volume").value = def.audio_volume ?? 80;
+            document.getElementById("f-volume").value = def.audio_volume ?? 100;
 
             document.getElementById("advanced-settings").setAttribute("open", "");
             document.getElementById("folder-preview").style.display = "none";
