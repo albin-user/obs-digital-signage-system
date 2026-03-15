@@ -42,6 +42,10 @@
             <span id="media-count" class="status-value">--</span>
         </div>
         <div class="status-card">
+            <span class="status-label"><span class="status-icon">🕐</span> Time</span>
+            <span id="system-time" class="status-value">--</span>
+        </div>
+        <div class="status-card">
             <span class="status-label"><span class="status-icon">☁</span> Sync</span>
             <button id="btn-sync" class="btn btn-small">Sync Now</button>
         </div>
@@ -69,6 +73,30 @@
             <div class="card-actions">
                 <button id="btn-edit-default" class="btn btn-small">Edit</button>
             </div>
+        </div>
+    </section>
+
+    <!-- Timezone Settings -->
+    <section class="settings-section">
+        <h2>Settings</h2>
+        <div class="schedule-card">
+            <div class="card-header">
+                <h3>Timezone</h3>
+                <span id="tz-current-badge" class="badge badge-default">--</span>
+            </div>
+            <p class="card-hint">All schedule times use this timezone. Current time: <strong id="tz-live-time">--</strong></p>
+            <div class="form-row" style="align-items:flex-end;margin-top:10px">
+                <div class="form-group" style="margin-bottom:0;flex:2">
+                    <label>Timezone</label>
+                    <select id="tz-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:0 0 auto">
+                    <button type="button" id="btn-save-tz" class="btn btn-primary btn-small">Save</button>
+                </div>
+            </div>
+            <small class="form-hint">Changing the timezone takes effect immediately for all schedules</small>
         </div>
     </section>
 

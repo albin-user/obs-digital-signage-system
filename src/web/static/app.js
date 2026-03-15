@@ -74,6 +74,9 @@ function refreshStatus() {
             document.getElementById("uptime-status").textContent = data.uptime || "--";
             var countEl = document.getElementById("media-count");
             if (countEl) countEl.textContent = data.media_count != null ? data.media_count : "--";
+            var timeEl = document.getElementById("system-time");
+            if (timeEl && data.system_time) timeEl.textContent = data.system_time;
+            if (timeEl && data.timezone) timeEl.title = data.timezone;
 
             // Track active schedule and re-render if it changed
             var newActive = data.active_schedule || "";
@@ -771,7 +774,90 @@ document.getElementById("schedule-list").addEventListener("click", function(e) {
     }
 });
 
+// -- Timezone management --
+
+function loadTimezones() {
+    fetch("/api/settings/timezones")
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById("tz-select");
+            sel.innerHTML = "";
+
+            // Common group
+            var commonGroup = document.createElement("optgroup");
+            commonGroup.label = "Common";
+            (data.common || []).forEach(function(tz) {
+                var opt = document.createElement("option");
+                opt.value = tz;
+                opt.textContent = tz.replace(/_/g, " ");
+                commonGroup.appendChild(opt);
+            });
+            sel.appendChild(commonGroup);
+
+            // All timezones group
+            var allGroup = document.createElement("optgroup");
+            allGroup.label = "All Timezones";
+            (data.all || []).forEach(function(tz) {
+                var opt = document.createElement("option");
+                opt.value = tz;
+                opt.textContent = tz;
+                allGroup.appendChild(opt);
+            });
+            sel.appendChild(allGroup);
+
+            // Set current value from status
+            refreshTimezone();
+        })
+        .catch(function() {
+            document.getElementById("tz-select").innerHTML = '<option value="">Failed to load</option>';
+        });
+}
+
+function refreshTimezone() {
+    fetch("/api/settings/timezone")
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById("tz-select");
+            if (data.timezone) sel.value = data.timezone;
+            document.getElementById("tz-current-badge").textContent = data.timezone || "--";
+            document.getElementById("tz-live-time").textContent = data.system_time || "--";
+        })
+        .catch(function() {});
+}
+
+document.getElementById("btn-save-tz").addEventListener("click", function() {
+    var btn = this;
+    var newTz = document.getElementById("tz-select").value;
+    if (!newTz) {
+        showToast("Select a timezone", "error");
+        return;
+    }
+
+    setLoading(btn, true);
+    fetch("/api/settings/timezone", {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ timezone: newTz }),
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || "Save failed"); });
+        return r.json();
+    })
+    .then(function(data) {
+        document.getElementById("tz-current-badge").textContent = data.timezone;
+        showToast("Timezone saved: " + data.timezone);
+        refreshTimezone();
+    })
+    .catch(function(err) {
+        showToast("Failed to save timezone: " + err.message, "error");
+    })
+    .finally(function() {
+        setLoading(btn, false);
+    });
+});
+
 refreshStatus();
 loadSchedules();
+loadTimezones();
 setInterval(refreshStatus, 5000);
 setInterval(checkConflicts, 30000);

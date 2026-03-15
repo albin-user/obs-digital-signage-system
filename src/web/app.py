@@ -4,8 +4,12 @@ Flask web application for schedule management and system dashboard.
 
 import asyncio
 import logging
+import os
+import re
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, available_timezones
 
 from flask import Flask, jsonify, render_template, request
 
@@ -93,6 +97,15 @@ def create_app(
             ago = int(time.time() - webdav.last_sync_time)
             last_sync = f"{ago}s ago"
 
+        settings = refs.get("settings")
+        try:
+            tz_name = str(settings.TIMEZONE) if settings else "UTC"
+            tz = ZoneInfo(tz_name)
+            system_time = datetime.now(tz).strftime("%H:%M:%S")
+        except Exception:
+            tz_name = "UTC"
+            system_time = ""
+
         return jsonify({
             "obs_connected": bool(obs and obs.connected),
             "current_playing": current_file,
@@ -100,6 +113,8 @@ def create_app(
             "last_sync": last_sync,
             "uptime": _format_uptime(time.time() - startup) if startup else "",
             "media_count": len(cm.media_files) if cm else 0,
+            "timezone": tz_name,
+            "system_time": system_time,
         })
 
     # -- Schedule CRUD --
@@ -196,6 +211,99 @@ def create_app(
         except Exception as e:
             logger.error(f"Sync trigger failed: {e}")
             return jsonify({"error": str(e)}), 500
+
+    # -- Timezone settings --
+
+    @app.route("/api/settings/timezone", methods=["GET"])
+    def get_timezone():
+        settings = refs.get("settings")
+        tz_name = settings.TIMEZONE if settings else "UTC"
+        try:
+            tz = ZoneInfo(tz_name)
+            now = datetime.now(tz)
+            system_time = now.strftime("%H:%M:%S")
+        except Exception:
+            system_time = ""
+        return jsonify({"timezone": tz_name, "system_time": system_time})
+
+    @app.route("/api/settings/timezone", methods=["PUT"])
+    def set_timezone():
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        new_tz = (data.get("timezone") or "").strip()
+        if not new_tz:
+            return jsonify({"error": "timezone is required"}), 400
+        if new_tz not in available_timezones():
+            return jsonify({"error": f"'{new_tz}' is not a valid timezone"}), 400
+
+        # Update running settings
+        settings = refs.get("settings")
+        if settings:
+            settings.TIMEZONE = new_tz
+
+        # Update scheduler timezone
+        scheduler = refs.get("scheduler")
+        if scheduler:
+            try:
+                scheduler.timezone = ZoneInfo(new_tz)
+                logger.info(f"Scheduler timezone updated to {new_tz}")
+            except Exception as e:
+                logger.error(f"Failed to update scheduler timezone: {e}")
+
+        # Persist to .env file
+        _update_env_value("TIMEZONE", new_tz)
+
+        logger.info(f"Timezone changed to {new_tz}")
+        return jsonify({"timezone": new_tz, "ok": True})
+
+    @app.route("/api/settings/timezones", methods=["GET"])
+    def list_timezones():
+        """Return list of common timezones for the dropdown."""
+        common = [
+            "Europe/Copenhagen", "Europe/London", "Europe/Berlin",
+            "Europe/Paris", "Europe/Stockholm", "Europe/Oslo",
+            "Europe/Helsinki", "Europe/Amsterdam", "Europe/Rome",
+            "Europe/Madrid", "Europe/Zurich", "Europe/Vienna",
+            "Europe/Warsaw", "Europe/Prague", "Europe/Athens",
+            "Europe/Moscow",
+            "US/Eastern", "US/Central", "US/Mountain", "US/Pacific",
+            "America/New_York", "America/Chicago", "America/Denver",
+            "America/Los_Angeles", "America/Toronto", "America/Sao_Paulo",
+            "Asia/Tokyo", "Asia/Shanghai", "Asia/Kolkata", "Asia/Dubai",
+            "Asia/Singapore", "Asia/Seoul",
+            "Australia/Sydney", "Australia/Melbourne",
+            "Pacific/Auckland",
+            "Africa/Johannesburg", "Africa/Cairo",
+            "UTC",
+        ]
+        all_tzs = sorted(available_timezones())
+        return jsonify({"common": common, "all": all_tzs})
+
+    def _update_env_value(key: str, value: str) -> None:
+        """Update a key=value in the .env config file."""
+        try:
+            from config.settings import get_env_file_path
+            env_file = get_env_file_path()
+            if not env_file.exists():
+                return
+
+            lines = env_file.read_text().splitlines()
+            updated = False
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                    lines[i] = f"{key}={value}"
+                    updated = True
+                    break
+
+            if not updated:
+                lines.append(f"{key}={value}")
+
+            env_file.write_text("\n".join(lines) + "\n")
+            logger.info(f"Updated {key} in {env_file}")
+        except Exception as e:
+            logger.error(f"Failed to update .env file: {e}")
 
     # -- Content listing --
 

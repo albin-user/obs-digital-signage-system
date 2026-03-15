@@ -780,6 +780,16 @@ input:focus, select:focus {
     margin-bottom: 12px;
 }
 
+/* Settings section */
+.settings-section {
+    margin-bottom: 40px;
+}
+.settings-section h2 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     body { padding: 12px; }
