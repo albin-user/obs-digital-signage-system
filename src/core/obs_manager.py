@@ -37,6 +37,7 @@ class OBSManager:
         self.startup_time: Optional[float] = None
         self._lock = threading.RLock()
         self._crash_times: List[float] = []
+        self.transition_warning: Optional[str] = None
 
     async def initialize(self) -> bool:
         """Initialize OBS Studio with full automation."""
@@ -792,6 +793,7 @@ class OBSManager:
                 if transition_name in available_transitions:
                     self.client.set_current_scene_transition(transition_name)
                     self.logger.info(f"Set scene transition to: {transition_name}")
+                    self.transition_warning = None
                     return True
 
                 # Try case-insensitive partial match
@@ -800,15 +802,19 @@ class OBSManager:
                     if transition_name_lower in available.lower():
                         self.client.set_current_scene_transition(available)
                         self.logger.info(f"Set scene transition to: {available} (matched '{transition_name}')")
+                        self.transition_warning = None
                         return True
 
-                # No match found - use first available transition as fallback
-                if available_transitions:
-                    fallback = available_transitions[0]
+                # No match found — fall back to Fade (preferred), then any available
+                fallback = "Fade" if "Fade" in available_transitions else (available_transitions[0] if available_transitions else None)
+                if fallback:
                     self.client.set_current_scene_transition(fallback)
-                    self.logger.warning(
-                        f"Transition '{transition_name}' not found, using fallback: {fallback}"
+                    self.transition_warning = (
+                        f"Transition '{transition_name}' is not set up in OBS. "
+                        f"Using '{fallback}' instead. To fix: add a '{transition_name}' "
+                        f"transition in OBS (Scene Transitions → +)."
                     )
+                    self.logger.warning(self.transition_warning)
                     return True
                 else:
                     self.logger.error("No transitions available in OBS")

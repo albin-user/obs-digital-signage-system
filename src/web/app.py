@@ -109,6 +109,12 @@ def create_app(
             tz_name = "UTC"
             system_time = ""
 
+        transition_warning = ""
+        if obs:
+            tw = getattr(obs, "transition_warning", None)
+            if tw and isinstance(tw, str):
+                transition_warning = tw
+
         return jsonify({
             "obs_connected": bool(obs and obs.connected),
             "current_playing": current_file,
@@ -118,6 +124,7 @@ def create_app(
             "media_count": len(cm.media_files) if cm else 0,
             "timezone": tz_name,
             "system_time": system_time,
+            "transition_warning": transition_warning,
         })
 
     # -- Schedule CRUD --

@@ -718,6 +718,17 @@ input:focus, select:focus {
     white-space: nowrap;
 }
 
+/* Transition warning banner */
+.transition-warning {
+    background: rgba(232,185,96,0.15);
+    border: 1px solid var(--yellow);
+    color: #ffcc80;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+}
+
 /* Connection lost banner */
 .connection-lost {
     background: rgba(232,185,96,0.18);

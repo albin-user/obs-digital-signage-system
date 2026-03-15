@@ -85,6 +85,17 @@ function refreshStatus() {
                 startClock();
             }
 
+            // Show/hide transition warning banner
+            var twBanner = document.getElementById("transition-warning");
+            if (twBanner) {
+                if (data.transition_warning) {
+                    twBanner.textContent = data.transition_warning;
+                    twBanner.style.display = "block";
+                } else {
+                    twBanner.style.display = "none";
+                }
+            }
+
             // Track active schedule and re-render if it changed
             var newActive = data.active_schedule || "";
             if (newActive !== _activeScheduleName) {
