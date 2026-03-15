@@ -541,10 +541,12 @@ class ContentManager:
             # Create scene — if it fails (e.g. stale source with same name), clean up and retry
             if not await self.obs_manager.create_scene(scene_name):
                 self.logger.warning(f"Scene creation failed for '{scene_name}' — removing stale source/scene and retrying")
-                # Remove any stale scene or input with this name
+                # Remove the matching _source input first (may hold a reference)
+                await self.obs_manager.remove_input(source_name)
+                # Then remove the scene itself and any input sharing the scene name
                 await self.obs_manager.remove_scene(scene_name)
-                await self.obs_manager.remove_input(scene_name)  # OBS shares source/scene namespace
-                await asyncio.sleep(0.2)
+                await self.obs_manager.remove_input(scene_name)
+                await asyncio.sleep(0.5)
                 if not await self.obs_manager.create_scene(scene_name):
                     self.logger.error(f"Failed to create OBS scene for {media_file.filename} after retry")
                     return False
