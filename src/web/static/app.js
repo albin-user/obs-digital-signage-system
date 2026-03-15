@@ -11,6 +11,10 @@ let _activeScheduleName = "";
 // Connection lost tracking
 let _statusFailCount = 0;
 
+// Client-side clock state (synced from server)
+let _serverTimezone = "";
+let _clockInterval = null;
+
 // Unsaved changes tracking
 let _formDirty = false;
 
@@ -74,9 +78,12 @@ function refreshStatus() {
             document.getElementById("uptime-status").textContent = data.uptime || "--";
             var countEl = document.getElementById("media-count");
             if (countEl) countEl.textContent = data.media_count != null ? data.media_count : "--";
-            var timeEl = document.getElementById("system-time");
-            if (timeEl && data.system_time) timeEl.textContent = data.system_time;
-            if (timeEl && data.timezone) timeEl.title = data.timezone;
+
+            // Sync timezone for client-side clock
+            if (data.timezone && data.timezone !== _serverTimezone) {
+                _serverTimezone = data.timezone;
+                startClock();
+            }
 
             // Track active schedule and re-render if it changed
             var newActive = data.active_schedule || "";
@@ -95,6 +102,33 @@ function refreshStatus() {
             document.getElementById("obs-status").textContent = "Error";
             document.getElementById("obs-status").className = "status-value disconnected";
         });
+}
+
+// -- Client-side clock --
+
+function startClock() {
+    if (_clockInterval) clearInterval(_clockInterval);
+    tickClock();
+    _clockInterval = setInterval(tickClock, 1000);
+}
+
+function tickClock() {
+    var timeEl = document.getElementById("system-time");
+    if (!timeEl || !_serverTimezone) return;
+    try {
+        var now = new Date();
+        var timeStr = now.toLocaleTimeString("en-GB", {
+            timeZone: _serverTimezone,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+        });
+        timeEl.textContent = timeStr;
+        timeEl.title = _serverTimezone;
+    } catch (e) {
+        // Invalid timezone — fall back to server value on next poll
+    }
 }
 
 // -- Schedule rendering --

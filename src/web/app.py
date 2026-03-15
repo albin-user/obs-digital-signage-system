@@ -64,9 +64,12 @@ def create_app(
 
     # -- Dashboard page --
 
+    # Cache-bust token: changes on each restart so browsers fetch fresh static files
+    _cache_bust = str(int(time.time()))
+
     @app.route("/")
     def index():
-        return render_template("index.html")
+        return render_template("index.html", cache_bust=_cache_bust)
 
     # -- Status API --
 
