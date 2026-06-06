@@ -61,54 +61,41 @@ chmod +x install.sh
 Double-click INSTALL.bat
 ```
 
-### 4. Configure
+On Ubuntu, `install.sh` also offers to install OBS, set up **auto-start on boot**, and serve the panel on **port 80** (clean `http://<ip>` URL) — just answer the prompts.
 
-Edit your configuration file:
-- **Ubuntu Production**: `config/ubuntu_prod.env`
-- **Windows Development**: `config/windows_test.env`
-- **Windows Production**: `config/windows_prod.env`
-
-```ini
-# Base directory (leave empty to auto-detect the project folder)
-CONTENT_BASE_DIR=
-
-# OBS password (set the same password in OBS: Tools > WebSocket Server Settings)
-OBS_PASSWORD=your_obs_password
-
-# Cloud sync (leave WEBDAV_HOST empty to run without cloud sync)
-WEBDAV_HOST=https://your-nas.com
-WEBDAV_USERNAME=your_username
-WEBDAV_PASSWORD=your_password
-WEBDAV_ROOT_PATH=/your_content_folder  # Folder on NAS containing your slides
-
-# Scheduling (switches content automatically by day/time)
-SCHEDULE_ENABLED=true
-TIMEZONE=UTC  # Examples: UTC, America/New_York, Europe/London, Asia/Tokyo
-```
-
-**⚠️ SECURITY NOTE:** Config files are protected by `.gitignore` and won't be uploaded to GitHub.
-
-### 5. Start System
+### 4. Start the System
 
 **Ubuntu:**
 ```bash
 ./start.sh
 ```
+(or just reboot, if you enabled auto-start during installation)
 
-**Windows (Development/Testing):**
+**Windows:** double-click `START.bat` (or `start_prod.bat` for production).
+
+### 5. Finish in the Setup Wizard (no file editing)
+
+The first time the system starts with no configuration, it launches a **web setup
+wizard**. Open it in any browser on the same network:
+
 ```
-Double-click start.bat
+http://<this-computer-ip>      (or http://localhost on the signage PC)
 ```
 
-**Windows (Production):**
-```
-Double-click start_prod.bat
-```
+The wizard:
+- **Generates a secure OBS password and configures OBS automatically** — you don't
+  touch OBS' settings dialog
+- Lets you enter and **test** your NAS (WebDAV) connection, then pick the content
+  folder from a live list (leave blank for offline mode)
+- Sets your timezone
+- Writes the config and starts the system
 
-**Manual Content Testing:**
-```
-Double-click test_manual_folder.bat  (Windows only - tests sunday_service_slideshow)
-```
+That's it — no config file editing. (Advanced users can still hand-edit
+`config/ubuntu_prod.env`; if a config file already exists, the wizard is skipped.)
+
+Run `./doctor.sh` any time to health-check OBS/WebDAV/config.
+
+**⚠️ SECURITY NOTE:** Config files are protected by `.gitignore` and won't be uploaded to GitHub.
 
 ---
 
@@ -157,7 +144,7 @@ COMPLETE_GUIDE.md also covers security & credentials, transferring from Windows 
 - **Storebox browser**: Browse NAS folders for content selection
 - **Manual sync**: Trigger a cloud sync from the browser
 - **Conflict detection**: Warnings for overlapping schedules
-- **Accessible on local network**: `http://<host>:8080` (no authentication required)
+- **Accessible on local network**: `http://<host>:8080` (no authentication required). Production uses a port 80 → 8080 firewall redirect so the panel is also reachable at the clean `http://<host>` — see COMPLETE_GUIDE.md → Web Admin Panel → Networking.
 
 ### Display & Transitions
 - **Professional transitions**: Stinger transitions for smooth content changes

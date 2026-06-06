@@ -367,40 +367,30 @@ The script will:
 
 **Important**: When prompted about FFmpeg, if not found, install it before continuing.
 
-### Step 8: Configure the System
+### Step 8: Configure the System — via the web wizard (no file editing)
 
-Edit the configuration file:
+**You normally do not edit any config file.** Start the system (`./start.sh`, or
+just reboot if you enabled auto-start) and open the **first-run setup wizard** in
+a browser:
 
-```bash
-nano config/ubuntu_prod.env
+```
+http://<this-computer-ip>      (or http://localhost on the signage PC)
 ```
 
-**Minimum required settings:**
+The wizard:
+- Generates a secure OBS password and **configures OBS automatically**
+- Lets you enter and **test** your NAS (WebDAV) connection, then pick the content
+  folder from a live folder list
+- Sets your timezone
+- Writes `config/ubuntu_prod.env` and `config/schedules.json` for you, then starts
+  the system
 
-```ini
-# OBS WebSocket Settings (leave password empty if OBS has no password)
-OBS_PASSWORD=
+Leave the WebDAV section empty for **offline mode** (manage content files directly
+on this computer).
 
-# WebDAV Settings (leave empty for offline mode)
-WEBDAV_HOST=https://your-nas-server.com
-WEBDAV_USERNAME=your_username
-WEBDAV_PASSWORD=your_password
-WEBDAV_ROOT_PATH=/path/to/content
-
-# Media Settings
-IMAGE_DISPLAY_TIME=15
-TRANSITION_START_OFFSET=2.0
-```
-
-Press `Ctrl+X`, then `Y`, then `Enter` to save.
-
-**For offline mode** (no WebDAV), leave WebDAV settings empty:
-
-```ini
-WEBDAV_HOST=
-WEBDAV_USERNAME=
-WEBDAV_PASSWORD=
-```
+> **Advanced / manual:** if you prefer, you can still create the config by hand —
+> copy `config/ubuntu_prod.env.example` to `config/ubuntu_prod.env` and edit it.
+> But if a config file already exists, the wizard is skipped.
 
 You're done with basic installation! Continue to [OBS Studio Configuration](#obs-studio-configuration).
 
@@ -569,19 +559,31 @@ Click **OK** to save settings.
 
 ### Step 4: Enable WebSocket Server
 
-This is crucial for the automation system to control OBS!
+**This is now automatic — you normally do nothing here.** When you complete the
+first-run setup wizard with "Configure OBS automatically" left checked (the
+default), the system:
 
+1. Generates a secure WebSocket password for you (or uses the one you type),
+2. Writes OBS' WebSocket config (`plugin_config/obs-websocket/config.json`) so
+   the server is enabled with that password, and
+3. Also launches OBS with the official `--websocket_password` / `--websocket_port`
+   flags, so the password can never drift out of sync.
+
+It takes effect the next time OBS starts (which the system does for you). If OBS
+was already running, quit it once.
+
+> Pre-writing the OBS config file is a convenience that relies on OBS' internal
+> config format. If a future OBS version changes that format, fall back to the
+> **manual method** below — it is the officially supported path and costs one
+> checkbox.
+
+**Manual method (fallback):**
 1. Click **Tools → WebSocket Server Settings**
 2. ✅ Check "Enable WebSocket server"
 3. Server Port: **4455** (default, leave as is)
-4. **Enable Authentication**:
-   - ❌ **Uncheck this** for easier setup (recommended), or
-   - ✅ Check it and set a password (must match `OBS_PASSWORD` in config)
+4. ✅ Enable Authentication and set a password that matches the one you entered
+   in the setup wizard (`OBS_PASSWORD` in `config/ubuntu_prod.env`)
 5. Click **OK**
-
-**Important Notes:**
-- If you don't set a password, leave `OBS_PASSWORD=` empty in your config
-- If you set a password (e.g., "mypassword"), set `OBS_PASSWORD=mypassword` in config
 
 ### Step 5: Configure Stinger Transition (Optional but Recommended)
 
@@ -779,7 +781,11 @@ gsettings set org.gnome.shell.extensions.dash-to-dock autohide-in-fullscreen tru
 
 ### Step 5: Configure Auto-Start on Boot
 
-Create a startup application to launch the system automatically.
+**Easiest:** the `install.sh` script offers to set this up for you (it writes
+`~/.config/autostart/obs-signage.desktop` with the correct path). If you answered
+**yes** during installation, auto-start is already configured — skip to Step 6.
+
+The methods below are for setting it up manually or changing it later.
 
 #### Method 1: Using Startup Applications GUI
 
@@ -989,12 +995,12 @@ MANUAL_CONTENT_FOLDER=
 # Web Admin Panel
 # ============================================================================
 WEB_UI_ENABLED=true
-WEB_UI_PORT=80
+WEB_UI_PORT=8080
 ```
 
 **Explanation:**
 - `WEB_UI_ENABLED`: Enable/disable the web admin panel (true/false)
-- `WEB_UI_PORT`: Port for the web UI (default: 80)
+- `WEB_UI_PORT`: Port the app binds (default: 8080). Leave at 8080 and use the port 80 → 8080 firewall redirect described under [Web Admin Panel → Networking](#networking-serving-the-panel-on-port-80-chosen-approach--option-a) so users get a clean `http://<host-ip>` URL without running the app as root.
 
 #### Notification Settings
 
@@ -1435,12 +1441,39 @@ The web admin panel starts automatically with the system.
 ### Access
 
 ```
-http://<host-ip>:80
+http://<host-ip>
 ```
 
-Examples: `http://localhost:80` from the signage computer, or `http://192.168.1.100:80` from any device on the same network.
+Examples: `http://localhost` from the signage computer, or `http://192.168.1.100` from any device on the same network. (Both resolve to the standard HTTP port 80, so no `:port` suffix is needed.)
 
-Port 80 requires root/sudo on Linux. Change the port with `WEB_UI_PORT` in your config file.
+### Networking: serving the panel on port 80 (chosen approach — Option A)
+
+**Decision:** we serve the web UI on plain **HTTP port 80** using a **firewall redirect (port 80 → 8080)**. The app itself keeps binding port **8080** as the normal `obs-slideshow` user; the kernel redirects inbound port-80 traffic to it.
+
+**Why port 80 (HTTP) and not 443 (HTTPS):** the panel is reached by **LAN IP address** (e.g. `http://10.0.1.82`), not a domain name. A browser-trusted TLS certificate can't be issued for a bare IP, so HTTPS would require a self-signed certificate — which makes every device show a permanent *"Not secure / invalid certificate"* warning. Plain HTTP on a trusted local network has no certificate and no warning. (If authentication is added later and a real domain/own-CA is available, revisit HTTPS.)
+
+**Why the redirect and not binding 80 directly:** ports below 1024 are privileged on Linux. The signage app runs as the non-root user `obs-slideshow` (launched via autostart → `start.sh`), so binding port 80 directly would fail (`PermissionError`) and the web UI would silently not start. The redirect keeps the app on the unprivileged port 8080 while users still get the clean port-80 URL — no root for the app, no certificate, no code changes.
+
+**Setup (run once on the signage PC, as a user with sudo):**
+
+```bash
+# Redirect traffic from OTHER devices on the LAN (port 80 -> 8080)
+sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+
+# Also redirect THIS PC's own browser (http://localhost) — local traffic
+# uses the OUTPUT chain, not PREROUTING, so it needs its own rule.
+sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-ports 8080
+
+# Persist across reboots
+sudo apt install iptables-persistent
+sudo netfilter-persistent save
+```
+
+> On Ubuntu 24.04 the `iptables` command is the nftables-backed compatibility shim — these rules and `netfilter-persistent` work unchanged.
+
+Keep `WEB_UI_PORT=8080` in `config/ubuntu_prod.env` (the default). After this, the panel is reachable at `http://<host-ip>` from any device on the LAN, and at `http://localhost` on the signage PC itself. (`install.sh` adds both rules for you.)
+
+> Note: the systemd `AmbientCapabilities=CAP_NET_BIND_SERVICE` approach (binding port 80 directly) is an alternative only relevant if the system is run as a systemd service instead of the autostart/`start.sh` flow. The redirect above is the standard approach for this deployment.
 
 ### Status Polling
 

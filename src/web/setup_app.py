@@ -28,6 +28,9 @@ OBS_PORT=4455
 OBS_PASSWORD={obs_password}
 OBS_TIMEOUT=10
 OBS_STARTUP_DELAY=15
+# App owns the fullscreen projector. Turn OFF "Save projectors on exit" in
+# OBS (General settings) to avoid a duplicate projector window on boot.
+AUTO_OPEN_PROJECTOR=true
 
 # WebDAV/Synology Settings
 WEBDAV_HOST={webdav_host}
@@ -225,6 +228,8 @@ def create_setup_app() -> Flask:
         webdav_username = (data.get("webdav_username") or "").strip()
         webdav_root_path = (data.get("webdav_root_path") or "/").strip()
         default_folder = (data.get("default_folder") or "").strip()
+        obs_port = int(data.get("obs_port") or 4455)
+        configure_obs = data.get("configure_obs", True)
 
         project_root = str(Path(__file__).parent.parent.parent)
 
@@ -250,8 +255,22 @@ def create_setup_app() -> Flask:
             # Write schedules.json with default folder matching WebDAV structure
             _write_initial_schedules(env_path.parent, webdav_root_path, default_folder)
 
+            # Best-effort: enable OBS WebSocket with this password so the
+            # operator never has to open OBS' settings dialog. Officially this
+            # is also enforced via launch flags; this just enables the server.
+            obs_configured = False
+            obs_running_warning = False
+            if configure_obs:
+                from core.obs_setup import write_websocket_config, is_obs_running
+                obs_running_warning = is_obs_running()
+                obs_configured = write_websocket_config(obs_password, obs_port) is not None
+
             app.config["SETUP_COMPLETE"] = True
-            return jsonify({"ok": True})
+            return jsonify({
+                "ok": True,
+                "obs_configured": obs_configured,
+                "obs_running_warning": obs_running_warning,
+            })
 
         except Exception as e:
             return jsonify({"error": f"Failed to write config: {e}"}), 500

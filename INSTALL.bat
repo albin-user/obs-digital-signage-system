@@ -91,41 +91,30 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Setup configuration files
+REM Configuration is created by the first-run web wizard, NOT here.
+REM (Pre-creating it would skip the wizard and leave placeholder credentials.)
 echo.
-echo [7/7] Setting up configuration files...
-if not exist "config\windows_test.env" (
-    echo Creating config\windows_test.env from example...
-    copy "config\windows_test.env.example" "config\windows_test.env" >nul
-    echo [IMPORTANT] Please edit config\windows_test.env with your credentials!
-) else (
-    echo config\windows_test.env already exists, skipping
-)
+echo [7/7] Configuration...
+echo The first-run setup wizard will collect your settings in the browser.
 
 echo.
 echo ====================================================================
 echo  Installation Complete!
 echo ====================================================================
 echo.
-echo IMPORTANT: Configure your settings before running!
+echo Next steps:
 echo.
-echo 1. Edit your configuration file:
-echo    notepad config\windows_test.env
-echo.
-echo    Update these settings:
-echo    - OBS_PASSWORD (OBS WebSocket password)
-echo    - WEBDAV_HOST, WEBDAV_USERNAME, WEBDAV_PASSWORD
-echo    - Or leave WebDAV settings empty for offline mode
-echo.
-echo 2. Install OBS Studio if not already installed:
+echo 1. Install OBS Studio if not already installed:
 echo    Download from: https://obsproject.com/download
 echo.
-echo 3. View the README for more information:
-echo    type README.md
-echo.
-echo 4. Start the system:
+echo 2. Start the system:
 echo    START.bat
 echo.
-echo For detailed documentation, see README.md
+echo 3. Open the setup wizard in any browser on the same network:
+echo    http://localhost   (or http://this-computer-ip from another device)
+echo    The wizard generates an OBS password, configures OBS automatically,
+echo    and tests your NAS connection - no manual config editing needed.
+echo.
+echo For detailed documentation, see README.md and COMPLETE_GUIDE.md
 echo.
 pause

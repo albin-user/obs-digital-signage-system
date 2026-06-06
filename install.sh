@@ -122,20 +122,79 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Setup configuration files
+# Install OBS Studio if missing
 echo ""
-echo -e "${GREEN}[8/8]${NC} Setting up configuration files..."
-if [ ! -f "config/ubuntu_prod.env" ]; then
-    echo "Creating config/ubuntu_prod.env from example..."
-    cp "config/ubuntu_prod.env.example" "config/ubuntu_prod.env"
-
-    # Automatically set CONTENT_BASE_DIR to current directory
-    CURRENT_DIR=$(pwd)
-    sed -i "s|CONTENT_BASE_DIR=.*|CONTENT_BASE_DIR=$CURRENT_DIR|" "config/ubuntu_prod.env"
-
-    echo -e "${YELLOW}[IMPORTANT]${NC} Please edit config/ubuntu_prod.env with your credentials!"
+echo -e "${GREEN}[8/10]${NC} Checking for OBS Studio..."
+if command -v obs &> /dev/null || command -v obs-studio &> /dev/null; then
+    echo "OBS Studio is already installed"
 else
-    echo "config/ubuntu_prod.env already exists, skipping"
+    echo -e "${YELLOW}[INFO]${NC} OBS Studio not found"
+    read -p "Install OBS Studio now? (y/n) " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        sudo apt install obs-studio -y || \
+            echo -e "${YELLOW}[WARNING]${NC} OBS install failed — install it manually with 'sudo apt install obs-studio'"
+    else
+        echo "Skipped — install OBS later with 'sudo apt install obs-studio'"
+    fi
+fi
+
+# Configuration is created by the first-run web wizard, NOT here.
+# (Pre-creating it would skip the wizard and leave placeholder credentials.)
+echo ""
+echo -e "${GREEN}[9/10]${NC} Configuration..."
+if [ -f "config/ubuntu_prod.env" ]; then
+    echo "config/ubuntu_prod.env already exists — the setup wizard will be skipped."
+else
+    echo "No config yet — the first-run setup wizard will collect it in your browser."
+fi
+
+# Optional: auto-start on boot + serve the panel on port 80
+echo ""
+echo -e "${GREEN}[10/10]${NC} Optional system integration..."
+INSTALL_DIR="$(pwd)"
+
+read -p "Set up auto-start on boot (recommended for a dedicated signage PC)? (y/n) " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    AUTOSTART_DIR="$HOME/.config/autostart"
+    mkdir -p "$AUTOSTART_DIR"
+    cat > "$AUTOSTART_DIR/obs-signage.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=OBS Digital Signage
+Comment=Starts the digital signage system on login
+Exec=$INSTALL_DIR/start.sh
+Path=$INSTALL_DIR
+X-GNOME-Autostart-enabled=true
+Terminal=false
+EOF
+    echo -e "${GREEN}[OK]${NC} Auto-start enabled ($AUTOSTART_DIR/obs-signage.desktop)"
+fi
+
+read -p "Serve the web panel on port 80 (clean http://<ip> URL, no :8080)? (y/n) " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Option A: redirect port 80 to the app on 8080 (app stays non-root).
+    # PREROUTING handles traffic from OTHER devices on the LAN.
+    # OUTPUT (loopback) handles traffic from THIS PC's own browser
+    # (http://localhost) — local traffic never traverses PREROUTING.
+    # Note: on Ubuntu 24.04 the iptables command is the nft-backed shim;
+    # these rules and netfilter-persistent work as expected.
+    add_redirect() {
+        local chain="$1"; shift
+        if sudo iptables -t nat -C "$chain" "$@" -p tcp --dport 80 -j REDIRECT --to-ports 8080 2>/dev/null; then
+            echo "  $chain redirect already present"
+        else
+            sudo iptables -t nat -A "$chain" "$@" -p tcp --dport 80 -j REDIRECT --to-ports 8080
+            echo -e "  ${GREEN}[OK]${NC} $chain port 80 -> 8080 redirect added"
+        fi
+    }
+    add_redirect PREROUTING
+    add_redirect OUTPUT -o lo
+    echo "Making the redirect persistent..."
+    sudo apt install iptables-persistent -y 2>/dev/null && sudo netfilter-persistent save 2>/dev/null || \
+        echo -e "${YELLOW}[WARNING]${NC} Could not persist the rule — it will reset on reboot. Re-run this step or install iptables-persistent manually."
 fi
 
 echo ""
@@ -143,29 +202,17 @@ echo "===================================================================="
 echo " Installation Complete!"
 echo "===================================================================="
 echo ""
-echo -e "${YELLOW}IMPORTANT: Configure your settings before running!${NC}"
+echo "Next steps:"
 echo ""
-echo "1. Edit your configuration file:"
-echo -e "   ${GREEN}nano config/ubuntu_prod.env${NC}"
+echo -e "1. Start the system:  ${GREEN}./start.sh${NC}"
+echo "   (or just reboot, if you enabled auto-start)"
 echo ""
-echo "   Update these settings:"
-echo "   - OBS_PASSWORD (OBS WebSocket password)"
-echo "   - WEBDAV_HOST, WEBDAV_USERNAME, WEBDAV_PASSWORD"
-echo "   - Or leave WebDAV settings empty for offline mode"
+echo "2. Open the setup wizard in any browser on the same network:"
+echo -e "   ${GREEN}http://<this-computer-ip>${NC}   (or http://localhost on this PC)"
+echo "   The wizard generates an OBS password, configures OBS automatically,"
+echo "   and tests your NAS connection — no manual config editing needed."
 echo ""
-echo "   Press Ctrl+X, then Y, then Enter to save"
+echo -e "3. Check system health any time with:  ${GREEN}./doctor.sh${NC}"
 echo ""
-echo "2. Install OBS Studio if not already installed:"
-echo -e "   ${GREEN}sudo apt install obs-studio -y${NC}"
-echo ""
-echo "3. View the README for more information:"
-echo -e "   ${GREEN}cat README.md${NC}"
-echo ""
-echo "4. Start the system:"
-echo -e "   ${GREEN}./start.sh${NC}"
-echo ""
-echo "5. Access the admin panel:"
-echo -e "   ${GREEN}http://localhost:8080${NC}  (or http://<ip-address>:8080 from another device)"
-echo ""
-echo "For detailed documentation, see README.md"
+echo "For detailed documentation, see README.md and COMPLETE_GUIDE.md"
 echo ""
