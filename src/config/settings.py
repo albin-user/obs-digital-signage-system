@@ -129,7 +129,13 @@ class Settings:
         self.OBS_PASSWORD = os.getenv("OBS_PASSWORD", "")
         self.OBS_TIMEOUT = _safe_int("OBS_TIMEOUT", 10)
         self.OBS_STARTUP_DELAY = _safe_int("OBS_STARTUP_DELAY", 15)
-    
+        # Whether the signage app opens the fullscreen projector itself.
+        # Set to false if you let OBS reopen projectors on launch
+        # ("Save projectors on exit" in OBS General settings) to avoid
+        # opening a second, duplicate projector window on the same monitor.
+        auto_projector = os.getenv("AUTO_OPEN_PROJECTOR", "true").lower()
+        self.AUTO_OPEN_PROJECTOR = auto_projector in ("true", "1", "yes", "on")
+
     def _setup_webdav_settings(self) -> None:
         """Setup WebDAV/Synology NAS configuration."""
         self.WEBDAV_HOST = os.getenv("WEBDAV_HOST", "")

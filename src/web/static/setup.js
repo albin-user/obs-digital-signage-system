@@ -27,6 +27,24 @@ function showTestResult(el, ok, message) {
     el.className = "test-result " + (ok ? "pass" : "fail");
 }
 
+function generatePassword(length) {
+    // Secure, no ambiguous chars, no '#' (the .env parser treats it as a comment).
+    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    var out = "";
+    var rnd = new Uint32Array(length || 20);
+    (window.crypto || window.msCrypto).getRandomValues(rnd);
+    for (var i = 0; i < rnd.length; i++) {
+        out += chars[rnd[i] % chars.length];
+    }
+    return out;
+}
+
+function fillGeneratedPassword() {
+    var field = document.getElementById("obs-password");
+    field.value = generatePassword(20);
+    field.type = "text"; // show it so the operator can note it if they want
+}
+
 function getWebDAVCreds() {
     return {
         host: document.getElementById("webdav-host").value.trim(),
@@ -189,6 +207,7 @@ function saveSetup(e) {
         webdav_root_path: document.getElementById("webdav-root-path").value || "/",
         default_folder: document.getElementById("webdav-default-folder").value || "",
         timezone: document.getElementById("timezone").value,
+        configure_obs: document.getElementById("configure-obs").checked,
     };
 
     fetch("/api/setup/save", {
@@ -203,6 +222,13 @@ function saveSetup(e) {
                 document.getElementById("setup-form").style.display = "none";
                 document.querySelector("header").style.display = "none";
                 document.getElementById("setup-success").style.display = "block";
+                if (result.data.obs_running_warning) {
+                    var note = document.getElementById("setup-success-note");
+                    if (note) {
+                        note.textContent = "Note: OBS is currently running. Please quit OBS once so the new WebSocket settings take effect.";
+                        note.style.display = "block";
+                    }
+                }
             } else {
                 showToast(result.data.error || "Save failed", "error");
             }
@@ -216,5 +242,11 @@ function saveSetup(e) {
 /* Wire up event listeners */
 document.getElementById("btn-test-obs").addEventListener("click", testOBS);
 document.getElementById("btn-test-webdav").addEventListener("click", testWebDAV);
+document.getElementById("btn-gen-password").addEventListener("click", fillGeneratedPassword);
 document.getElementById("setup-form").addEventListener("submit", saveSetup);
 document.getElementById("webdav-root-path").addEventListener("change", browseSubfolders);
+
+// Pre-fill a generated password so the operator can just click Save.
+if (!document.getElementById("obs-password").value) {
+    fillGeneratedPassword();
+}

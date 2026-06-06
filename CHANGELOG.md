@@ -4,6 +4,49 @@ All notable changes to the OBS Digital Signage Automation System.
 
 ---
 
+## [2.4.0] - 2026-06-02
+
+### Bulletproof, near-zero-touch setup
+
+Deployment is now "install, reboot, fill in one web form." The installer no
+longer pre-creates the config (which previously skipped the first-run wizard),
+and OBS is configured automatically.
+
+**Setup wizard owns configuration**
+- `install.sh` no longer writes `ubuntu_prod.env`, so the first-run web wizard
+  actually runs (it was effectively orphaned before)
+- `install.sh` now offers to install OBS Studio, generate the autostart entry
+  (`~/.config/autostart/obs-signage.desktop`), and add the port 80 -> 8080
+  redirect (Option A)
+- New `doctor.sh` runs the pre-flight health check (`--check`)
+
+**Automatic OBS WebSocket configuration**
+- Wizard generates a secure password and pre-seeds OBS' WebSocket server via
+  `plugin_config/obs-websocket/config.json` (`server_enabled`, `auth_required`,
+  `server_password`, `server_port`) — no more manual OBS settings dialog
+- OBS is also launched with the officially-supported `--websocket_password` /
+  `--websocket_port` flags so the password can never drift out of sync
+  (the launch command is redacted in logs)
+- New `src/core/obs_setup.py` (backup + atomic write, `OBS_CONFIG_DIR` override
+  for tests); manual GUI enable remains the documented fallback
+
+**Projector duplicate-on-boot fix**
+- New `AUTO_OPEN_PROJECTOR` flag (default true); app re-opens the projector
+  after a fresh OBS relaunch but not after a simple reconnect. Turn off OBS'
+  "Save projectors on exit" so the app is the single source of truth.
+
+**Linux/Xubuntu specifics**
+- Port-80 redirect now adds an OUTPUT/loopback rule too, so `http://localhost`
+  works on the signage PC itself (local traffic skips PREROUTING)
+- OBS config paths (WebSocket pre-seed, `.sentinel`, scene collection) detect
+  native vs Flatpak vs Snap installs instead of hardcoding `~/.config/obs-studio`
+- Official launch flags `--disable-missing-files-check` / `--disable-updater` /
+  `--multi` to suppress blocking startup dialogs
+
+**Tests:** 136 pass (OBS pre-seeding + install-path detection coverage)
+
+---
+
 ## [2.3.0] - 2026-03-11
 
 ### Web UI UX Improvements & Live Settings Apply

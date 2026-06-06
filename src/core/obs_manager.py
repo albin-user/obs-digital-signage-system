@@ -121,14 +121,40 @@ class OBSManager:
                 self.logger.error("OBS Studio executable not found")
                 return False
 
-            # OBS command line arguments for digital signage
+            # OBS command line arguments for digital signage.
+            # Officially-documented flags (obsproject.com/kb/launch-parameters):
+            #   --disable-missing-files-check: suppress the blocking "Missing
+            #     Files" dialog that can appear on startup after our content
+            #     cleanup removes media a scene referenced.
+            #   --disable-updater: skip the update prompt (Windows/macOS only;
+            #     a no-op on Linux, harmless to pass).
+            #   --multi: don't warn about multiple instances.
+            # Note: --disable-shutdown-check was removed in OBS 32.0+, so Safe
+            # Mode is suppressed by deleting the .sentinel folder (Linux below).
             cmd_args = [
                 str(obs_path),
-                # Note: --disable-shutdown-check removed in OBS 32.0+
-                # Delete .sentinel folder instead (see Linux section)
+                "--disable-missing-files-check",
+                "--disable-updater",
+                "--multi",
             ]
 
-            self.logger.info(f"Launching OBS with command: {' '.join(cmd_args)}")
+            # Officially-supported obs-websocket launch flags. These OVERRIDE
+            # the configured port/password so our config is always the source
+            # of truth (they do NOT enable the server — that is pre-seeded in
+            # config.json by the setup wizard / GUI toggle).
+            # https://github.com/obsproject/obs-websocket README
+            if self.settings.OBS_PASSWORD:
+                cmd_args += [
+                    "--websocket_port", str(self.settings.OBS_PORT),
+                    "--websocket_password", self.settings.OBS_PASSWORD,
+                ]
+
+            # Redact the websocket password before logging the command.
+            safe_args = [
+                "***" if i > 0 and cmd_args[i - 1] == "--websocket_password" else a
+                for i, a in enumerate(cmd_args)
+            ]
+            self.logger.info(f"Launching OBS with command: {' '.join(safe_args)}")
 
             # Set working directory to OBS installation directory
             # This fixes the "Failed to find locale/en-US.ini" error
@@ -174,8 +200,10 @@ class OBSManager:
                 env.setdefault('DISPLAY', ':0')
 
                 # Remove OBS .sentinel folder to prevent safe mode dialog
-                # OBS 32.0+ removed --disable-shutdown-check, so delete .sentinel folder
-                sentinel_folder = Path.home() / ".config/obs-studio/.sentinel"
+                # OBS 32.0+ removed --disable-shutdown-check, so delete .sentinel folder.
+                # Use the install-aware config dir (native/Flatpak/Snap).
+                from core.obs_setup import get_obs_config_dir
+                sentinel_folder = get_obs_config_dir() / ".sentinel"
                 if sentinel_folder.exists():
                     try:
                         import shutil
@@ -231,7 +259,8 @@ class OBSManager:
         """
         try:
             import json, uuid as _uuid
-            scenes_dir = Path.home() / ".config/obs-studio/basic/scenes"
+            from core.obs_setup import get_obs_config_dir
+            scenes_dir = get_obs_config_dir() / "basic" / "scenes"
             if not scenes_dir.exists():
                 return
 
@@ -378,6 +407,16 @@ class OBSManager:
     async def _setup_fullscreen_projector(self) -> None:
         """Setup fullscreen projector on available displays."""
         try:
+            # Skip if OBS is configured to reopen projectors itself. Opening
+            # one here as well would stack a second fullscreen window on the
+            # same monitor (the "canvas shown twice on boot" symptom).
+            if not getattr(self.settings, "AUTO_OPEN_PROJECTOR", True):
+                self.logger.info(
+                    "AUTO_OPEN_PROJECTOR is disabled — leaving projector "
+                    "management to OBS (skipping projector open)"
+                )
+                return
+
             await asyncio.sleep(3)  # Wait for OBS to fully initialize
 
             # Get available monitors
@@ -536,6 +575,10 @@ class OBSManager:
                 self.logger.warning("OBS is not running - attempting relaunch")
                 if await self._launch_obs():
                     if await self._connect_websocket():
+                        # Fresh OBS process — any previously-open projector is
+                        # gone, so re-open one. (A simple reconnect above does
+                        # NOT do this: that projector window is still open.)
+                        await self._setup_fullscreen_projector()
                         self.logger.info("OBS recovery successful (relaunched)")
                         return True
 

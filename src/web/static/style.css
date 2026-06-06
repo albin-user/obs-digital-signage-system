@@ -811,3 +811,24 @@ input:focus, select:focus {
     #card-uptime { display: none; }
     .form-row { flex-direction: column; gap: 0; }
 }
+
+/* --- Setup wizard: OBS auto-configure controls --- */
+.input-with-button {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+.input-with-button input {
+    flex: 1;
+}
+.form-check .check-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-weight: 500;
+}
+.form-check .check-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}

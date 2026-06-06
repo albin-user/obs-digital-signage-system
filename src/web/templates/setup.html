@@ -28,15 +28,34 @@
         <!-- Section 1: OBS Studio -->
         <div class="setup-section">
             <h2 class="setup-section-title">OBS Studio Connection <span class="section-hint">Required</span></h2>
+
+            <div class="form-group form-check">
+                <label class="check-label">
+                    <input type="checkbox" id="configure-obs" name="configure_obs" checked>
+                    Configure OBS automatically (recommended)
+                </label>
+                <small class="form-hint" id="configure-obs-hint">
+                    The setup will enable the OBS WebSocket server with the password below — no need to open OBS settings.
+                    Takes effect the next time OBS starts.
+                </small>
+            </div>
+
             <div class="form-group">
                 <label for="obs-password">WebSocket Password</label>
-                <input type="password" id="obs-password" name="obs_password" required autofocus>
-                <small class="form-hint">Find this in OBS: Tools &gt; WebSocket Server Settings &gt; Show Connect Info</small>
+                <div class="input-with-button">
+                    <input type="password" id="obs-password" name="obs_password" required autofocus>
+                    <button type="button" class="btn btn-small" id="btn-gen-password" title="Generate a secure password">Generate</button>
+                </div>
+                <small class="form-hint" id="obs-password-hint">
+                    A secure password is generated for you. Click Generate for a new one, or type your own.
+                </small>
             </div>
+
             <div class="setup-test-row">
                 <button type="button" class="btn btn-small" id="btn-test-obs">Test Connection</button>
                 <span class="test-result" id="result-obs"></span>
             </div>
+            <small class="form-hint">Testing only works if OBS is already running with this password. With automatic setup it will connect once the system starts OBS.</small>
         </div>
 
         <!-- Section 2: WebDAV / NAS -->
@@ -126,6 +145,7 @@
         <div class="success-icon">&#10003;</div>
         <h2>Setup Complete!</h2>
         <p style="color: var(--text-muted); margin-top: 8px;">The system is now starting. This page will close automatically.</p>
+        <p id="setup-success-note" class="form-hint" style="display:none; margin-top:12px; color: var(--warning, #d68a00);"></p>
     </div>
 
     <script src="/static/setup.js"></script>
